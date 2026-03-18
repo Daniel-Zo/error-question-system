@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
 
+// 统一定义类型（文件顶部）
+interface Tag {
+  id: string;
+  name: string;
+}
+
 interface QuestionStats {
   id: string;
   question_content: string;
@@ -17,11 +23,6 @@ interface KnowledgePointStats {
   name: string;
   count: number;
   practice_count: number;
-}
-
-interface Tag {
-  id: string;
-  name: string;
 }
 
 export default function StatsDashboard() {
@@ -64,17 +65,17 @@ export default function StatsDashboard() {
             foreignTable: 'error_question_logs'
           });
 
-        // 格式化错题统计数据
+        // 格式化错题统计数据 - 关键修复：给 tagId 添加 string 类型注解
         const formattedQuestionStats = (questionData || []).map(item => ({
           id: item.id,
           question_content: item.question_content || '',
           tag_ids: item.tag_ids || [],
-          tag_names: item.tag_ids.map(tagId => 
+          tag_names: item.tag_ids.map((tagId: string) =>  // 添加类型注解
             tagData.find(tag => tag.id === tagId)?.name || ''
           ).filter(Boolean),
           practice_count: item.error_question_logs?.count || 0,
           create_time: item.create_time
-        }));
+        })) as QuestionStats[];
         setQuestionStats(formattedQuestionStats);
 
         // 统计知识点数据
@@ -226,7 +227,7 @@ export default function StatsDashboard() {
                         {question.question_content || '无题目内容'}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {question.tag_names?.map(tag => (
+                        {question.tag_names?.map((tag: string) => (  // 添加类型注解
                           <span key={tag} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full mr-1">
                             {tag}
                           </span>
