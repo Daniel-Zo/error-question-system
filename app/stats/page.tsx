@@ -42,7 +42,9 @@ export default function StatsDashboard() {
           .from('tags')
           .select('id, name')
           .order('name');
-        setTags(tagData || []);
+        // 确保 tagData 不为 null，默认空数组
+        const safeTagData = tagData || [];
+        setTags(safeTagData);
 
         // 获取总错题数
         const { count: totalCount } = await supabase
@@ -65,13 +67,13 @@ export default function StatsDashboard() {
             foreignTable: 'error_question_logs'
           });
 
-        // 格式化错题统计数据 - 关键修复：给 tagId 添加 string 类型注解
+        // 格式化错题统计数据 - 关键修复：使用安全的 safeTagData 替代 tagData
         const formattedQuestionStats = (questionData || []).map(item => ({
           id: item.id,
           question_content: item.question_content || '',
           tag_ids: item.tag_ids || [],
           tag_names: item.tag_ids.map((tagId: string) =>  // 添加类型注解
-            tagData.find(tag => tag.id === tagId)?.name || ''
+            safeTagData.find(tag => tag.id === tagId)?.name || ''  // 使用 safeTagData
           ).filter(Boolean),
           practice_count: item.error_question_logs?.count || 0,
           create_time: item.create_time
