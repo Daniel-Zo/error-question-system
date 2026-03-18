@@ -4,19 +4,11 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
 
-// 1. 先定义 Tag 类型（在文件顶部）
+// 统一定义类型（文件顶部）
 interface Tag {
   id: string;
   name: string;
 }
-
-// 2. 修正报错的 map 函数（添加 tagId: string 类型注解）
-const paperDetailsWithTags = (paperDetails || []).map(question => ({
-  ...question,
-  tag_names: question.tag_ids.map((tagId: string) =>  // 关键：添加 : string 类型注解
-    tags.find(tag => tag.id === tagId)?.name || ''
-  ).filter(Boolean)
-}));
 
 export default function DailyPractice() {
   const [dailyPractices, setDailyPractices] = useState<any[]>([]);
@@ -41,132 +33,131 @@ export default function DailyPractice() {
     fetchDailyPractices();
   }, []);
 
-// 生成新的每日一练
-const generateDailyPractice = async () => {
-  setIsLoading(true);
-  try {
-    const { data: questionIds, error } = await supabase
-      .from('error_questions')
-      .select('id')
-      .order('create_time', { ascending: false });
+  // 生成新的每日一练
+  const generateDailyPractice = async () => {
+    setIsLoading(true);
+    try {
+      const { data: questionIds, error } = await supabase
+        .from('error_questions')
+        .select('id')
+        .order('create_time', { ascending: false });
 
-    if (error) throw error;
-    const validQuestionIds = questionIds || [];
-    if (validQuestionIds.length === 0) {
-      alert('暂无错题，无法生成每日一练！');
-      return;
-    }
+      if (error) throw error;
+      const validQuestionIds = questionIds || [];
+      if (validQuestionIds.length === 0) {
+        alert('暂无错题，无法生成每日一练！');
+        return;
+      }
 
-    const randomQuestionIds = validQuestionIds
-      .sort(() => 0.5 - Math.random())
-      .slice(0, 10)
-      .map(item => item.id);
+      const randomQuestionIds = validQuestionIds
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 10)
+        .map(item => item.id);
 
-    const { data: newPaper, error: insertError } = await supabase
-      .from('daily_practice')
-      .insert({
-        included_question_ids: randomQuestionIds,
-      })
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
-
-    const logPromises = randomQuestionIds.map(questionId => 
-      supabase.from('error_question_logs')
+      const { data: newPaper, error: insertError } = await supabase
+        .from('daily_practice')
         .insert({
-          question_id: questionId,
-          selected_scene: 'Daily Practice'
+          included_question_ids: randomQuestionIds,
         })
-    );
-    await Promise.all(logPromises);
+        .select()
+        .single();
 
-    const { data: paperDetails } = await supabase
-      .from('error_questions')
-      .select(`
-        id,
-        question_content,
-        tag_ids,
-        knowledge_points,
-        correct_answer,
-        question_image_url,
-        correct_answer_image_url
-      `)
-      .in('id', randomQuestionIds);
+      if (insertError) throw insertError;
 
-    // 关联标签名称（修正类型错误）
-    const { data: tags } = await supabase.from('tags').select('id, name');
-    // 定义 Tag 类型（如果文件顶部未定义）
-    interface Tag {
-      id: string;
-      name: string;
+      const logPromises = randomQuestionIds.map(questionId => 
+        supabase.from('error_question_logs')
+          .insert({
+            question_id: questionId,
+            selected_scene: 'Daily Practice'
+          })
+      );
+      await Promise.all(logPromises);
+
+      // 获取题目详情（paperDetails 在此处定义）
+      const { data: paperDetails } = await supabase
+        .from('error_questions')
+        .select(`
+          id,
+          question_content,
+          tag_ids,
+          knowledge_points,
+          correct_answer,
+          question_image_url,
+          correct_answer_image_url
+        `)
+        .in('id', randomQuestionIds);
+
+      // 获取标签列表
+      const { data: tags } = await supabase.from('tags').select('id, name');
+      
+      // 关联标签名称（正确作用域内处理）
+      const paperDetailsWithTags = (paperDetails || []).map(question => ({
+        ...question,
+        // 给 tagId 添加显式类型注解
+        tag_names: question.tag_ids.map((tagId: string) => 
+          (tags as Tag[]).find(tag => tag.id === tagId)?.name || ''
+        ).filter(Boolean)
+      }));
+
+      setCurrentPaper({
+        ...newPaper,
+        questionList: paperDetailsWithTags || [],
+      });
+
+      setDailyPractices(prev => [newPaper, ...(prev || [])]);
+      alert('每日一练生成成功！');
+    } catch (error) {
+      alert(`生成失败：${(error as Error).message}`);
+      console.error('生成每日一练错误:', error);
+    } finally {
+      setIsLoading(false);
     }
-    const paperDetailsWithTags = (paperDetails || []).map(question => ({
-      ...question,
-      // 关键：给 tagId 添加 string 类型注解
-      tag_names: question.tag_ids.map((tagId: string) => 
-        (tags as Tag[]).find(tag => tag.id === tagId)?.name || ''
-      ).filter(Boolean)
-    }));
+  };
 
-    setCurrentPaper({
-      ...newPaper,
-      questionList: paperDetailsWithTags || [],
-    });
+  // 查看历史记录详情
+  const viewHistoryPaper = async (paper: any) => {
+    setIsLoadingHistory(true);
+    try {
+      // 获取标签列表
+      const { data: tags } = await supabase.from('tags').select('id, name');
+      
+      // 获取题目详情（paperDetails 在此处定义）
+      const { data: paperDetails, error } = await supabase
+        .from('error_questions')
+        .select(`
+          id,
+          question_content,
+          tag_ids,
+          knowledge_points,
+          correct_answer,
+          question_image_url,
+          correct_answer_image_url
+        `)
+        .in('id', paper.included_question_ids || []);
 
-    setDailyPractices(prev => [newPaper, ...(prev || [])]);
-    alert('每日一练生成成功！');
-  } catch (error) {
-    alert(`生成失败：${(error as Error).message}`);
-    console.error('生成每日一练错误:', error);
-  } finally {
-    setIsLoading(false);
-  }
-};
+      if (error) throw error;
+      
+      // 关联标签名称（正确作用域内处理）
+      const paperDetailsWithTags = (paperDetails || []).map(question => ({
+        ...question,
+        // 给 tagId 添加显式类型注解
+        tag_names: question.tag_ids.map((tagId: string) => 
+          (tags as Tag[]).find(tag => tag.id === tagId)?.name || ''
+        ).filter(Boolean)
+      }));
 
-// 查看历史记录详情函数中同样需要修正
-const viewHistoryPaper = async (paper: any) => {
-  setIsLoadingHistory(true);
-  try {
-    const { data: tags } = await supabase.from('tags').select('id, name');
-    const { data: paperDetails, error } = await supabase
-      .from('error_questions')
-      .select(`
-        id,
-        question_content,
-        tag_ids,
-        knowledge_points,
-        correct_answer,
-        question_image_url,
-        correct_answer_image_url
-      `)
-      .in('id', paper.included_question_ids || []);
-
-    if (error) throw error;
-    
-    // 修正这里的类型错误
-    interface Tag {
-      id: string;
-      name: string;
+      setSelectedHistoryPaper({
+        ...paper,
+        questionList: paperDetailsWithTags || [],
+      });
+    } catch (error) {
+      alert(`加载历史记录失败：${(error as Error).message}`);
+      console.error('加载历史记录错误:', error);
+    } finally {
+      setIsLoadingHistory(false);
     }
-    const paperDetailsWithTags = (paperDetails || []).map(question => ({
-      ...question,
-      tag_names: question.tag_ids.map((tagId: string) => 
-        (tags as Tag[]).find(tag => tag.id === tagId)?.name || ''
-      ).filter(Boolean)
-    }));
+  };
 
-    setSelectedHistoryPaper({
-      ...paper,
-      questionList: paperDetailsWithTags || [],
-    });
-  } catch (error) {
-    alert(`加载历史记录失败：${(error as Error).message}`);
-    console.error('加载历史记录错误:', error);
-  } finally {
-    setIsLoadingHistory(false);
-  }
-};
   // 删除历史练习记录
   const deleteHistoryPaper = async (paperId: string, e: React.MouseEvent) => {
     e.stopPropagation();
