@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Link from 'next/link';
 import { getAllTags } from '../lib/tags';
-import { format, subDays } from 'date-fns';
+import format from 'date-fns/format';
+import subDays from 'date-fns/subDays';
 import zhCN from 'date-fns/locale/zh-CN';
 
 // 定义类型
