@@ -39,39 +39,33 @@ export default function AddQuestion() {
     try {
       const { data: { text } } = await Tesseract.recognize(file, 'chi_sim');
       setValue('questionContent', text);
+
+      // Step 2: Upload image to Supabase storage (optional)
+      setIsUploading(true);
+      const fileName = `error_question_${Date.now()}_${file.name}`;
+      const { data: uploadData, error: uploadError } = await supabase
+        .storage
+        .from('error_question_images')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Supabase upload error:', uploadError);
+        throw uploadError;
+      }
+
+      // Get image URL
+      const { data: urlData } = supabase
+        .storage
+        .from('error_question_images')
+        .getPublicUrl(uploadData.path);
+      setImageUrl(urlData.publicUrl);
+      alert('Image uploaded and text recognized successfully!');
     } catch (error) {
-      alert('OCR recognition failed, please enter the question manually');
-      console.error('OCR error:', error);
-    }
-
-    // Step 2: Upload image to Supabase storage (optional)
-// 替换原有上传逻辑
-try {
-  setIsUploading(true);
-  const fileName = `error_question_${Date.now()}_${file.name}`;
-  const { data: uploadData, error: uploadError } = await supabase
-    .storage
-    .from('error_question_images') // 确认桶名一致
-    .upload(fileName, file, {
-      cacheControl: '3600', // 缓存策略（可选）
-      upsert: false // 不覆盖同名文件
-    });
-
-  if (uploadError) {
-    console.error('Supabase upload error:', uploadError); // 打印详细错误
-    throw uploadError;
-  }
-
-  // 获取图片 URL
-  const { data: urlData } = supabase
-    .storage
-    .from('error_question_images')
-    .getPublicUrl(uploadData.path);
-  setImageUrl(urlData.publicUrl);
-} catch (error) {
-  console.error('Full upload error:', error); // 打印完整错误栈
-  alert('Image upload failed, but question content has been recognized. Error: ' + (error as Error).message);
-}
+      console.error('Full error:', error);
+      alert('Image upload failed, but question content has been recognized. Error: ' + (error as Error).message);
     } finally {
       setIsOcrLoading(false);
       setIsUploading(false);
