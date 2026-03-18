@@ -215,9 +215,9 @@ export default function DailyPractice() {
                 {index + 1}. {questionContent}
               </h3>
               
-              {/* 标签 */}
+              {/* 标签 - 关键修复：给 tag 添加 string 类型注解 */}
               <div className="flex flex-wrap gap-1 mb-3">
-                {tagNames.map(tag => (
+                {tagNames.map((tag: string) => (
                   <span key={tag} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
                     {tag}
                   </span>
