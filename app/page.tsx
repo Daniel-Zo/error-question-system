@@ -34,21 +34,28 @@ export default function Home() {
         {/* 修改标题：儿童错题管理系统 → 错题管理系统 */}
         <h1 className="text-3xl font-bold text-gray-800">错题管理系统</h1>
         <div className="space-x-6"> {/* 增大按钮间距：space-x-4 → space-x-6 */}
-          {/* 添加错题按钮 - 美化样式 */}
-          <Link 
-            href="/add-question" 
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg transition-all shadow-md hover:shadow-lg"
-          >
-            添加错题
-          </Link>
-          {/* 修改按钮文字：生成每日一练 → 每日一练 */}
-          <Link 
-            href="/daily-practice" 
-            className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg transition-all shadow-md hover:shadow-lg"
-          >
-            每日一练
-          </Link>
-        </div>
+  {/* 添加错题按钮 - 美化样式 */}
+  <Link 
+    href="/add-question" 
+    className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg transition-all shadow-md hover:shadow-lg"
+  >
+    添加错题
+  </Link>
+  {/* 修改按钮文字：生成每日一练 → 每日一练 */}
+  <Link 
+    href="/daily-practice" 
+    className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg transition-all shadow-md hover:shadow-lg"
+  >
+    每日一练
+  </Link>
+  {/* 新增：统计仪表盘入口 */}
+  <Link 
+    href="/stats" 
+    className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg transition-all shadow-md hover:shadow-lg"
+  >
+    错题统计
+  </Link>
+</div>
       </div>
 
       {isLoading ? (
