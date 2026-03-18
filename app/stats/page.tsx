@@ -10,6 +10,10 @@ interface Tag {
   name: string;
 }
 
+interface ErrorQuestionLog {
+  count: number;
+}
+
 interface QuestionStats {
   id: string;
   question_content: string;
@@ -53,32 +57,52 @@ export default function StatsDashboard() {
         setTotalQuestions(totalCount || 0);
 
         // 获取错题练习次数统计
+        // 修正查询方式：使用 select 直接获取 count，而非关联查询
         const { data: questionData } = await supabase
           .from('error_questions')
           .select(`
             id,
             question_content,
             tag_ids,
-            create_time,
-            error_question_logs(count)
+            create_time
           `)
-          .order(sortBy === 'practice_count' ? 'error_question_logs.count' : 'create_time', { 
-            ascending: false,
-            foreignTable: 'error_question_logs'
-          });
+          .order('created_at', { ascending: false });
 
-        // 格式化错题统计数据 - 关键修复：使用安全的 safeTagData 替代 tagData
-        const formattedQuestionStats = (questionData || []).map(item => ({
-          id: item.id,
-          question_content: item.question_content || '',
-          tag_ids: item.tag_ids || [],
-          tag_names: item.tag_ids.map((tagId: string) =>  // 添加类型注解
-            safeTagData.find(tag => tag.id === tagId)?.name || ''  // 使用 safeTagData
-          ).filter(Boolean),
-          practice_count: item.error_question_logs?.count || 0,
-          create_time: item.create_time
-        })) as QuestionStats[];
+        // 单独查询每道题的练习次数（更可靠的方式）
+        const questionStatsWithPracticeCount = await Promise.all(
+          (questionData || []).map(async (item) => {
+            // 查询该错题被练习的次数
+            const { count: practiceCount } = await supabase
+              .from('error_question_logs')
+              .select('*', { count: 'exact', head: true })
+              .eq('question_id', item.id);
+
+            return {
+              id: item.id,
+              question_content: item.question_content || '',
+              tag_ids: item.tag_ids || [],
+              tag_names: item.tag_ids.map((tagId: string) =>  
+                safeTagData.find(tag => tag.id === tagId)?.name || ''  
+              ).filter(Boolean),
+              practice_count: practiceCount || 0,
+              create_time: item.create_time
+            };
+          })
+        );
+
+        // 类型断言确保类型正确
+        const formattedQuestionStats = questionStatsWithPracticeCount as QuestionStats[];
         setQuestionStats(formattedQuestionStats);
+
+        // 按排序方式重新排序
+        const sortedStats = [...formattedQuestionStats].sort((a, b) => {
+          if (sortBy === 'practice_count') {
+            return b.practice_count - a.practice_count;
+          } else {
+            return new Date(b.create_time).getTime() - new Date(a.create_time).getTime();
+          }
+        });
+        setQuestionStats(sortedStats);
 
         // 统计知识点数据
         const knowledgeMap: Record<string, { count: number; practice_count: number }> = {};
