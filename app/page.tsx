@@ -4,11 +4,17 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Link from 'next/link';
 import { getAllTags } from '../lib/tags';
+// 修正后的日期函数导入
 import format from 'date-fns/format';
 import subDays from 'date-fns/subDays';
 import zhCN from 'date-fns/locale/zh-CN';
 
-// 定义类型
+// 定义类型（文件顶部）
+interface Tag {
+  id: string;
+  name: string;
+}
+
 interface ErrorQuestion {
   id: string;
   question_content: string;
@@ -20,11 +26,6 @@ interface ErrorQuestion {
   correct_answer_image_url: string;
   create_time: string;
   error_question_logs: { count: number } | null;
-}
-
-interface Tag {
-  id: string;
-  name: string;
 }
 
 export default function Home() {
@@ -59,13 +60,13 @@ export default function Home() {
 
         if (error) throw error;
         
-        // 关联标签名称
+        // 关联标签名称 - 关键修复：给 tagId 添加 string 类型注解
         const questionsWithTags = (data || []).map(question => ({
           ...question,
-          tag_names: question.tag_ids.map(tagId => 
+          tag_names: question.tag_ids.map((tagId: string) =>  // 添加类型注解
             tagList.find(tag => tag.id === tagId)?.name || ''
           ).filter(Boolean)
-        }));
+        })) as ErrorQuestion[];
         
         setErrorQuestions(questionsWithTags);
         setFilteredQuestions(questionsWithTags);
@@ -200,11 +201,11 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 标签筛选 */}
+            {/* 标签筛选 - 给 tag 添加 string 类型注解 */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">知识点标签</label>
               <div className="flex flex-wrap gap-2">
-                {tags.map(tag => (
+                {tags.map((tag: Tag) => (  // 添加类型注解
                   <button
                     key={tag.id}
                     type="button"
@@ -259,9 +260,9 @@ export default function Home() {
                     </div>
                   )}
                   
-                  {/* 标签 */}
+                  {/* 标签 - 给 tag 添加 string 类型注解 */}
                   <div className="flex flex-wrap gap-1 mb-3">
-                    {question.tag_names?.map(tag => (
+                    {question.tag_names?.map((tag: string) => (  // 添加类型注解
                       <span key={tag} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
                         {tag}
                       </span>
