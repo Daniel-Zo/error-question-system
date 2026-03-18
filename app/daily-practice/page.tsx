@@ -3,14 +3,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
-import Image from 'next/image';
 
 export default function DailyPractice() {
   const [dailyPractices, setDailyPractices] = useState<any[]>([]);
   const [currentPaper, setCurrentPaper] = useState<any>(null);
-  const [selectedHistoryPaper, setSelectedHistoryPaper] = useState<any>(null); // 选中的历史记录
+  const [selectedHistoryPaper, setSelectedHistoryPaper] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false); // 加载历史详情的状态
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // 获取历史练习记录
   useEffect(() => {
@@ -43,13 +42,11 @@ export default function DailyPractice() {
         return;
       }
 
-      // 随机选择10道题（不足10道则全部选择）
       const randomQuestionIds = validQuestionIds
         .sort(() => 0.5 - Math.random())
         .slice(0, 10)
         .map(item => item.id);
 
-      // 保存每日一练记录
       const { data: newPaper, error: insertError } = await supabase
         .from('daily_practice')
         .insert({
@@ -60,7 +57,6 @@ export default function DailyPractice() {
 
       if (insertError) throw insertError;
 
-      // 记录每道题的选中日志
       const logPromises = randomQuestionIds.map(questionId => 
         supabase.from('error_question_logs')
           .insert({
@@ -70,7 +66,6 @@ export default function DailyPractice() {
       );
       await Promise.all(logPromises);
 
-      // 获取练习题详情
       const { data: paperDetails } = await supabase
         .from('error_questions')
         .select(`
@@ -82,13 +77,11 @@ export default function DailyPractice() {
         `)
         .in('id', randomQuestionIds);
 
-      // 设置当前练习题
       setCurrentPaper({
         ...newPaper,
         questionList: paperDetails || [],
       });
 
-      // 更新历史记录列表
       setDailyPractices(prev => [newPaper, ...(prev || [])]);
       alert('每日一练生成成功！');
     } catch (error) {
@@ -99,12 +92,15 @@ export default function DailyPractice() {
     }
   };
 
-  // 查看历史记录详情
+  // 查看历史记录详情（修复后）
   const viewHistoryPaper = async (paper: any) => {
     setIsLoadingHistory(true);
     try {
-      // 根据历史记录中的题目ID查询详情
-      const { data: paperDetails } = await supabase
+      console.log('=== 历史记录详情查询 ===');
+      console.log('历史记录ID:', paper.id);
+      console.log('题目ID列表:', paper.included_question_ids);
+      
+      const { data: paperDetails, error } = await supabase
         .from('error_questions')
         .select(`
           id,
@@ -115,7 +111,9 @@ export default function DailyPractice() {
         `)
         .in('id', paper.included_question_ids || []);
 
-      // 设置选中的历史记录（包含题目详情）
+      if (error) throw error;
+      console.log('查询到的题目详情:', paperDetails);
+      
       setSelectedHistoryPaper({
         ...paper,
         questionList: paperDetails || [],
@@ -133,7 +131,7 @@ export default function DailyPractice() {
     setSelectedHistoryPaper(null);
   };
 
-  // 渲染题目列表（复用逻辑）
+  // 渲染题目列表（修复后）
   const renderQuestionList = (questionList: any[]) => {
     if (!questionList || questionList.length === 0) {
       return <p className="text-gray-500">暂无题目</p>;
@@ -144,6 +142,16 @@ export default function DailyPractice() {
         {questionList.map((question: any, index: number) => {
           const knowledgePoints = question.knowledge_points || [];
           const questionContent = question.question_content || '无题目内容';
+          // 严格校验图片URL
+          const isValidImageUrl = question.question_image_url && 
+                                  question.question_image_url.startsWith('https://') &&
+                                  question.question_image_url.trim() !== '';
+          
+          console.log(`题目${index+1} - ID:${question.id}`, {
+            hasImageUrl: !!question.question_image_url,
+            isValidUrl: isValidImageUrl,
+            url: question.question_image_url
+          });
           
           return (
             <div key={question.id || `question-${index}`} className="border-b pb-6">
@@ -151,20 +159,25 @@ export default function DailyPractice() {
                 {index + 1}. {questionContent}
               </h3>
               
-              {/* 题目图片 */}
-              {question.question_image_url && (
+              {/* 题目图片（改用原生img标签） */}
+              {isValidImageUrl && (
                 <div className="my-3 max-w-md">
                   <p className="text-sm text-gray-500 mb-1">题目图片：</p>
                   <div className="border rounded p-1 bg-gray-50">
-                    <Image
+                    <img
                       src={question.question_image_url}
                       alt={`题目 ${index + 1}`}
-                      width={500}
-                      height={300}
-                      className="rounded object-contain"
-                      loading="lazy"
+                      className="rounded object-contain max-w-full h-auto"
+                      style={{ maxHeight: '300px' }}
                       onError={(e) => {
-                        e.currentTarget.style.display = 'none';
+                        const target = e.currentTarget as HTMLImageElement;
+                        target.alt = `题目 ${index + 1} 图片加载失败`;
+                        target.style.border = '1px solid red';
+                        target.style.padding = '2px';
+                        console.error(`题目${index+1}图片加载失败`, {
+                          url: question.question_image_url,
+                          error: e
+                        });
                       }}
                     />
                   </div>
@@ -215,7 +228,7 @@ export default function DailyPractice() {
         </div>
       ) : null}
 
-      {/* 历史记录详情弹窗/区域 */}
+      {/* 历史记录详情 */}
       {selectedHistoryPaper && (
         <div className="border p-6 rounded shadow mb-8 bg-white z-10 relative">
           <div className="flex justify-between items-center mb-4">
