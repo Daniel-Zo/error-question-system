@@ -45,25 +45,33 @@ export default function AddQuestion() {
     }
 
     // Step 2: Upload image to Supabase storage (optional)
-    try {
-      setIsUploading(true);
-      const fileName = `error_question_${Date.now()}_${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase
-        .storage
-        .from('error_question_images')
-        .upload(fileName, file);
+// 替换原有上传逻辑
+try {
+  setIsUploading(true);
+  const fileName = `error_question_${Date.now()}_${file.name}`;
+  const { data: uploadData, error: uploadError } = await supabase
+    .storage
+    .from('error_question_images') // 确认桶名一致
+    .upload(fileName, file, {
+      cacheControl: '3600', // 缓存策略（可选）
+      upsert: false // 不覆盖同名文件
+    });
 
-      if (uploadError) throw uploadError;
+  if (uploadError) {
+    console.error('Supabase upload error:', uploadError); // 打印详细错误
+    throw uploadError;
+  }
 
-      // Get image URL
-      const { data: urlData } = supabase
-        .storage
-        .from('error_question_images')
-        .getPublicUrl(uploadData.path);
-      setImageUrl(urlData.publicUrl);
-    } catch (error) {
-      alert('Image upload failed, but question content has been recognized');
-      console.error('Upload error:', error);
+  // 获取图片 URL
+  const { data: urlData } = supabase
+    .storage
+    .from('error_question_images')
+    .getPublicUrl(uploadData.path);
+  setImageUrl(urlData.publicUrl);
+} catch (error) {
+  console.error('Full upload error:', error); // 打印完整错误栈
+  alert('Image upload failed, but question content has been recognized. Error: ' + (error as Error).message);
+}
     } finally {
       setIsOcrLoading(false);
       setIsUploading(false);
