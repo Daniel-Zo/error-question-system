@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Link from 'next/link';
+import Image from 'next/image'; // 引入 Next.js 图片组件
 
 export default function DailyPractice() {
   const [dailyPractices, setDailyPractices] = useState<any[]>([]);
@@ -67,10 +68,16 @@ export default function DailyPractice() {
       );
       await Promise.all(logPromises);
 
-      // 5. Get paper details
+      // 5. Get paper details (包含图片URL: question_image_url)
       const { data: paperDetails } = await supabase
         .from('error_questions')
-        .select('*')
+        .select(`
+          id,
+          question_content,
+          knowledge_points,
+          correct_answer,
+          question_image_url // 新增：查询图片URL字段
+        `)
         .in('id', randomQuestionIds);
 
       setCurrentPaper({
@@ -108,19 +115,37 @@ export default function DailyPractice() {
           <h2 className="text-2xl font-semibold mb-4">
             Daily Practice ({new Date(currentPaper.generate_time).toLocaleString()})
           </h2>
-          <div className="space-y-4 mt-4">
+          <div className="space-y-8 mt-4"> {/* 增大间距，优化排版 */}
             {currentPaper.questionList.map((question: any, index: number) => (
-              <div key={question.id} className="border-b pb-4">
-                <h3 className="font-medium">
+              <div key={question.id} className="border-b pb-6">
+                <h3 className="font-medium text-lg mb-2">
                   {index + 1}. {question.question_content}
                 </h3>
+                
+                {/* 新增：显示错题图片（如果有） */}
+                {question.question_image_url && (
+                  <div className="my-3 max-w-md">
+                    <p className="text-sm text-gray-500 mb-1">Question Image:</p>
+                    <div className="border rounded p-1 bg-gray-50">
+                      <Image
+                        src={question.question_image_url}
+                        alt={`Question ${index + 1}`}
+                        width={500} // 图片宽度
+                        height={300} // 图片高度
+                        className="rounded object-contain" // 保持比例，适应容器
+                        loading="lazy" // 懒加载优化
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-2 text-sm text-gray-600">
-                  Knowledge Points: {question.knowledge_points.join(', ')}
+                  <span className="font-medium">Knowledge Points:</span> {question.knowledge_points.join(', ')}
                 </div>
+                
                 {question.correct_answer && (
                   <div className="mt-2 text-sm">
-                    <span className="text-green-600">Correct Answer:</span>
-                    {question.correct_answer}
+                    <span className="text-green-600 font-medium">Correct Answer:</span> {question.correct_answer}
                   </div>
                 )}
               </div>
