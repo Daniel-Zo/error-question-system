@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '../../zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { supabase } from '../../supabase';
+import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 import Tesseract from 'tesseract.js';
 
