@@ -318,7 +318,7 @@ export default function DailyPractice() {
                     <td className="border border-gray-200 px-4 py-2 text-sm">
                       {(paper.included_question_ids || []).length} 道
                     </td>
-                    <td className="border border-gray-200 px-4 py-2 text-sm space-x-2">
+                    <td className="border border-gray-200 px-4 py-2 text-sm">
                       {/* 详情按钮 */}
                       <button 
                         className="text-blue-600 hover:text-blue-800 mr-2"
@@ -343,10 +343,6 @@ export default function DailyPractice() {
               </tbody>
             </table>
           </div>
-        )}
-      </tbody>
-    </table>
-  </div>
         ) : (
           <p className="text-gray-600">暂无历史练习记录</p>
         )}
