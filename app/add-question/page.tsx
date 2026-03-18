@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 import Tesseract from 'tesseract.js';
+import Link from 'next/link'; // 引入Link组件
 
 // 表单验证规则
 const errorQuestionSchema = z.object({
@@ -99,6 +100,16 @@ export default function AddQuestion() {
 
   return (
     <div className="container mx-auto py-8 max-w-2xl">
+      {/* 新增：返回主页按钮 */}
+      <div className="mb-6">
+        <Link 
+          href="/" 
+          className="inline-flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+        >
+          ← 返回主页
+        </Link>
+      </div>
+
       <h1 className="text-3xl font-bold mb-6">添加错题</h1>
       
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

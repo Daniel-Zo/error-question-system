@@ -29,40 +29,44 @@ export default function Home() {
 
   return (
     <div className="container mx-auto py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">儿童错题管理系统</h1>
-        <div className="space-x-4">
+      {/* 标题和按钮区域 - 优化样式 */}
+      <div className="flex justify-between items-center mb-8">
+        {/* 修改标题：儿童错题管理系统 → 错题管理系统 */}
+        <h1 className="text-3xl font-bold text-gray-800">错题管理系统</h1>
+        <div className="space-x-6"> {/* 增大按钮间距：space-x-4 → space-x-6 */}
+          {/* 添加错题按钮 - 美化样式 */}
           <Link 
             href="/add-question" 
-            className="bg-blue-500 text-white px-4 py-2 rounded"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg transition-all shadow-md hover:shadow-lg"
           >
             添加错题
           </Link>
+          {/* 修改按钮文字：生成每日一练 → 每日一练 */}
           <Link 
             href="/daily-practice" 
-            className="bg-green-500 text-white px-4 py-2 rounded"
+            className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg transition-all shadow-md hover:shadow-lg"
           >
-            生成每日一练
+            每日一练
           </Link>
         </div>
       </div>
 
       {isLoading ? (
-        <p>加载中...</p>
+        <p className="text-gray-600">加载中...</p>
       ) : errorQuestions.length === 0 ? (
-        <p>暂无错题，请添加错题后再使用系统！</p>
+        <p className="text-gray-600">暂无错题，请添加错题后再使用系统！</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
           {errorQuestions.map((question) => (
-            <div key={question.id} className="border p-4 rounded shadow">
-              <h3 className="text-xl font-semibold">
+            <div key={question.id} className="border border-gray-200 p-5 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+              <h3 className="text-xl font-semibold text-gray-800">
                 {question.question_content.substring(0, 50)}
                 {question.question_content.length > 50 ? '...' : ''}
               </h3>
               <div className="mt-2">
                 <span className="text-gray-600">知识点：</span>
                 {question.knowledge_points.map((tag: string) => (
-                  <span key={tag} className="bg-gray-100 px-2 py-1 rounded text-sm mr-1">
+                  <span key={tag} className="bg-gray-100 px-2 py-1 rounded text-sm mr-1 mt-1 inline-block">
                     {tag}
                   </span>
                 ))}

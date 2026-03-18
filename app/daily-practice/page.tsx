@@ -10,6 +10,7 @@ export default function DailyPractice() {
   const [selectedHistoryPaper, setSelectedHistoryPaper] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null); // 删除状态
 
   // 获取历史练习记录
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function DailyPractice() {
         .slice(0, 10)
         .map(item => item.id);
 
+      // 保存每日一练记录
       const { data: newPaper, error: insertError } = await supabase
         .from('daily_practice')
         .insert({
@@ -57,6 +59,7 @@ export default function DailyPractice() {
 
       if (insertError) throw insertError;
 
+      // 记录每道题的选中日志
       const logPromises = randomQuestionIds.map(questionId => 
         supabase.from('error_question_logs')
           .insert({
@@ -66,6 +69,7 @@ export default function DailyPractice() {
       );
       await Promise.all(logPromises);
 
+      // 获取练习题详情
       const { data: paperDetails } = await supabase
         .from('error_questions')
         .select(`
@@ -77,11 +81,13 @@ export default function DailyPractice() {
         `)
         .in('id', randomQuestionIds);
 
+      // 设置当前练习题
       setCurrentPaper({
         ...newPaper,
         questionList: paperDetails || [],
       });
 
+      // 更新历史记录列表
       setDailyPractices(prev => [newPaper, ...(prev || [])]);
       alert('每日一练生成成功！');
     } catch (error) {
@@ -92,7 +98,7 @@ export default function DailyPractice() {
     }
   };
 
-  // 查看历史记录详情（修复后）
+  // 查看历史记录详情
   const viewHistoryPaper = async (paper: any) => {
     setIsLoadingHistory(true);
     try {
@@ -126,12 +132,46 @@ export default function DailyPractice() {
     }
   };
 
+  // 删除历史练习记录
+  const deleteHistoryPaper = async (paperId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // 阻止事件冒泡，避免触发查看详情
+    if (!confirm('确定要删除这条历史练习记录吗？此操作不可恢复！')) {
+      return;
+    }
+
+    setIsDeleting(paperId);
+    try {
+      // 删除每日一练记录
+      const { error: deletePaperError } = await supabase
+        .from('daily_practice')
+        .delete()
+        .eq('id', paperId);
+
+      if (deletePaperError) throw deletePaperError;
+
+      // 过滤掉已删除的记录
+      setDailyPractices(prev => prev.filter(paper => paper.id !== paperId));
+      
+      // 如果当前打开的是这条记录的详情，关闭详情
+      if (selectedHistoryPaper && selectedHistoryPaper.id === paperId) {
+        setSelectedHistoryPaper(null);
+      }
+
+      alert('历史记录删除成功！');
+    } catch (error) {
+      alert(`删除失败：${(error as Error).message}`);
+      console.error('删除历史记录错误:', error);
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
   // 关闭历史记录详情
   const closeHistoryPaper = () => {
     setSelectedHistoryPaper(null);
   };
 
-  // 渲染题目列表（修复后）
+  // 渲染题目列表（复用逻辑）
   const renderQuestionList = (questionList: any[]) => {
     if (!questionList || questionList.length === 0) {
       return <p className="text-gray-500">暂无题目</p>;
@@ -250,31 +290,65 @@ export default function DailyPractice() {
         </div>
       )}
 
-      {/* 历史练习记录列表 */}
+      {/* 历史练习记录 - 表格形式 */}
       <div className="mt-8">
         <h2 className="text-xl font-semibold mb-4">历史练习记录</h2>
         {dailyPractices && dailyPractices.length > 0 ? (
-          <div className="space-y-3">
-            {dailyPractices.map((paper) => (
-              <div 
-                key={paper.id || `paper-${Date.now()}`} 
-                className="border p-4 rounded cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => viewHistoryPaper(paper)}
-              >
-                <div className="flex justify-between items-center">
-                  <span>
-                    {new Date(paper.generate_time).toLocaleString()}
-                  </span>
-                  <span className="text-sm bg-gray-100 px-2 py-1 rounded">
-                    {(paper.included_question_ids || []).length} 道题目
-                  </span>
-                </div>
-                <p className="text-sm text-gray-500 mt-1">点击查看详情</p>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse border border-gray-200">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">序号</th>
+                  <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">生成时间</th>
+                  <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">题目数量</th>
+                  <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyPractices.map((paper, index) => (
+                  <tr 
+                    key={paper.id || `paper-${Date.now()}`} 
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => viewHistoryPaper(paper)}
+                  >
+                    <td className="border border-gray-200 px-4 py-2 text-sm">{index + 1}</td>
+                    <td className="border border-gray-200 px-4 py-2 text-sm">
+                      {new Date(paper.generate_time).toLocaleString()}
+                    </td>
+                    <td className="border border-gray-200 px-4 py-2 text-sm">
+                      {(paper.included_question_ids || []).length} 道
+                    </td>
+                    <td className="border border-gray-200 px-4 py-2 text-sm space-x-2">
+                      {/* 详情按钮 */}
+                      <button 
+                        className="text-blue-600 hover:text-blue-800 mr-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          viewHistoryPaper(paper);
+                        }}
+                      >
+                        详情
+                      </button>
+                      {/* 删除按钮 */}
+                      <button 
+                        className="text-red-600 hover:text-red-800"
+                        onClick={(e) => deleteHistoryPaper(paper.id, e)}
+                        disabled={isDeleting === paper.id}
+                      >
+                        {isDeleting === paper.id ? '删除中...' : '删除'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </tbody>
+    </table>
+  </div>
         ) : (
-          <p>暂无历史练习记录</p>
+          <p className="text-gray-600">暂无历史练习记录</p>
         )}
       </div>
 
