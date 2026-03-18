@@ -8,10 +8,10 @@ import { supabase } from '../../lib/supabase';
 import { useRouter } from 'next/navigation';
 import Tesseract from 'tesseract.js';
 
-// Form validation schema
+// 表单验证规则
 const errorQuestionSchema = z.object({
-  questionContent: z.string().min(1, 'Question content cannot be empty'),
-  knowledgePoints: z.string().min(1, 'Knowledge points cannot be empty (separate multiple with commas)'),
+  questionContent: z.string().min(1, '题目内容不能为空'),
+  knowledgePoints: z.string().min(1, '知识点不能为空（多个知识点用逗号分隔）'),
   errorReason: z.string().optional(),
   correctAnswer: z.string().optional(),
 });
@@ -24,23 +24,23 @@ export default function AddQuestion() {
   const [isUploading, setIsUploading] = useState(false);
   const router = useRouter();
 
-  // Initialize form
+  // 初始化表单
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<ErrorQuestionFormData>({
     resolver: zodResolver(errorQuestionSchema),
   });
 
-  // Image upload + OCR recognition
+  // 图片上传 + OCR识别
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsOcrLoading(true);
-    // Step 1: OCR recognize text from image
     try {
+      // OCR识别图片文字
       const { data: { text } } = await Tesseract.recognize(file, 'chi_sim');
       setValue('questionContent', text);
 
-      // Step 2: Upload image to Supabase storage (optional)
+      // 上传图片到Supabase存储
       setIsUploading(true);
       const fileName = `error_question_${Date.now()}_${file.name}`;
       const { data: uploadData, error: uploadError } = await supabase
@@ -52,30 +52,30 @@ export default function AddQuestion() {
         });
 
       if (uploadError) {
-        console.error('Supabase upload error:', uploadError);
+        console.error('Supabase上传错误:', uploadError);
         throw uploadError;
       }
 
-      // Get image URL
+      // 获取图片URL
       const { data: urlData } = supabase
         .storage
         .from('error_question_images')
         .getPublicUrl(uploadData.path);
       setImageUrl(urlData.publicUrl);
-      alert('Image uploaded and text recognized successfully!');
+      alert('图片上传成功，题目内容已识别！');
     } catch (error) {
-      console.error('Full error:', error);
-      alert('Image upload failed, but question content has been recognized. Error: ' + (error as Error).message);
+      console.error('上传失败详情:', error);
+      alert(`图片上传失败，但题目内容已识别。错误：${(error as Error).message}`);
     } finally {
       setIsOcrLoading(false);
       setIsUploading(false);
     }
   };
 
-  // Submit error question
+  // 提交错题
   const onSubmit = async (data: ErrorQuestionFormData) => {
     try {
-      // Process knowledge points (convert comma-separated string to array)
+      // 处理知识点（逗号分隔转数组）
       const knowledgePointsArray = data.knowledgePoints.split(',').map(tag => tag.trim());
 
       const { error } = await supabase
@@ -89,22 +89,22 @@ export default function AddQuestion() {
         });
 
       if (error) throw error;
-      alert('Error question added successfully!');
+      alert('错题添加成功！');
       router.push('/');
     } catch (error) {
-      alert('Add failed: ' + (error as Error).message);
-      console.error('Add error question error:', error);
+      alert(`添加失败：${(error as Error).message}`);
+      console.error('添加错题错误:', error);
     }
   };
 
   return (
     <div className="container mx-auto py-8 max-w-2xl">
-      <h1 className="text-3xl font-bold mb-6">Add Error Question</h1>
+      <h1 className="text-3xl font-bold mb-6">添加错题</h1>
       
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        {/* Image upload + OCR */}
+        {/* 图片上传 + OCR */}
         <div>
-          <label className="block text-sm font-medium mb-1">Upload Question Image (Auto Recognition)</label>
+          <label className="block text-sm font-medium mb-1">上传题目图片（自动识别文字）</label>
           <input
             type="file"
             accept="image/*"
@@ -112,57 +112,57 @@ export default function AddQuestion() {
             className="border p-2 rounded w-full"
             disabled={isOcrLoading || isUploading}
           />
-          {isOcrLoading && <p className="text-sm text-blue-500 mt-1">Recognizing text from image...</p>}
-          {isUploading && <p className="text-sm text-blue-500 mt-1">Uploading image...</p>}
+          {isOcrLoading && <p className="text-sm text-blue-500 mt-1">正在识别图片文字...</p>}
+          {isUploading && <p className="text-sm text-blue-500 mt-1">正在上传图片...</p>}
         </div>
 
-        {/* Question Content */}
+        {/* 题目内容 */}
         <div>
-          <label className="block text-sm font-medium mb-1">Question Content</label>
+          <label className="block text-sm font-medium mb-1">题目内容</label>
           <textarea
             {...register('questionContent')}
             rows={4}
             className="border p-2 rounded w-full"
-            placeholder="Enter question content (will be auto-filled after OCR recognition)"
+            placeholder="请输入题目内容（图片识别后会自动填充）"
           />
           {errors.questionContent && (
             <p className="text-red-500 text-sm mt-1">{errors.questionContent.message}</p>
           )}
         </div>
 
-        {/* Knowledge Points */}
+        {/* 知识点 */}
         <div>
-          <label className="block text-sm font-medium mb-1">Knowledge Points (separate multiple with commas)</label>
+          <label className="block text-sm font-medium mb-1">知识点（多个知识点用逗号分隔）</label>
           <input
             {...register('knowledgePoints')}
             type="text"
             className="border p-2 rounded w-full"
-            placeholder="e.g., Primary Math, Addition and Subtraction, Application Problems"
+            placeholder="例如：小学数学,加减法,应用题"
           />
           {errors.knowledgePoints && (
             <p className="text-red-500 text-sm mt-1">{errors.knowledgePoints.message}</p>
           )}
         </div>
 
-        {/* Error Reason */}
+        {/* 错误原因 */}
         <div>
-          <label className="block text-sm font-medium mb-1">Error Reason (Optional)</label>
+          <label className="block text-sm font-medium mb-1">错误原因（可选）</label>
           <input
             {...register('errorReason')}
             type="text"
             className="border p-2 rounded w-full"
-            placeholder="e.g., Careless mistake, Unmastered knowledge point"
+            placeholder="例如：粗心大意,知识点未掌握"
           />
         </div>
 
-        {/* Correct Answer */}
+        {/* 正确答案 */}
         <div>
-          <label className="block text-sm font-medium mb-1">Correct Answer (Optional)</label>
+          <label className="block text-sm font-medium mb-1">正确答案（可选）</label>
           <textarea
             {...register('correctAnswer')}
             rows={2}
             className="border p-2 rounded w-full"
-            placeholder="Enter correct answer"
+            placeholder="请输入正确答案"
           />
         </div>
 
@@ -170,7 +170,7 @@ export default function AddQuestion() {
           type="submit"
           className="bg-blue-500 text-white px-4 py-2 rounded w-full"
         >
-          Save Error Question
+          保存错题
         </button>
       </form>
     </div>

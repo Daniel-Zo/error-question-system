@@ -8,7 +8,7 @@ export default function Home() {
   const [errorQuestions, setErrorQuestions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch all error questions
+  // 获取所有错题
   useEffect(() => {
     const fetchErrorQuestions = async () => {
       const { data, error } = await supabase
@@ -19,7 +19,7 @@ export default function Home() {
         `)
         .order('create_time', { ascending: false });
 
-      if (error) console.error('Failed to fetch error questions:', error);
+      if (error) console.error('获取错题失败:', error);
       else setErrorQuestions(data || []);
       setIsLoading(false);
     };
@@ -30,27 +30,27 @@ export default function Home() {
   return (
     <div className="container mx-auto py-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Child's Error Question Management System</h1>
+        <h1 className="text-3xl font-bold">儿童错题管理系统</h1>
         <div className="space-x-4">
           <Link 
             href="/add-question" 
             className="bg-blue-500 text-white px-4 py-2 rounded"
           >
-            Add Error Question
+            添加错题
           </Link>
           <Link 
             href="/daily-practice" 
             className="bg-green-500 text-white px-4 py-2 rounded"
           >
-            Generate Daily Practice
+            生成每日一练
           </Link>
         </div>
       </div>
 
       {isLoading ? (
-        <p>Loading...</p>
+        <p>加载中...</p>
       ) : errorQuestions.length === 0 ? (
-        <p>No error questions yet, please add some!</p>
+        <p>暂无错题，请添加错题后再使用系统！</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
           {errorQuestions.map((question) => (
@@ -60,7 +60,7 @@ export default function Home() {
                 {question.question_content.length > 50 ? '...' : ''}
               </h3>
               <div className="mt-2">
-                <span className="text-gray-600">Knowledge Points:</span>
+                <span className="text-gray-600">知识点：</span>
                 {question.knowledge_points.map((tag: string) => (
                   <span key={tag} className="bg-gray-100 px-2 py-1 rounded text-sm mr-1">
                     {tag}
@@ -68,10 +68,10 @@ export default function Home() {
                 ))}
               </div>
               <div className="mt-2 text-gray-600 text-sm">
-                Selected Count: {question.error_question_logs?.count || 0}
+                被选中次数：{question.error_question_logs?.count || 0}
               </div>
               <div className="mt-3 text-gray-500 text-sm">
-                Create Time: {new Date(question.create_time).toLocaleDateString()}
+                创建时间：{new Date(question.create_time).toLocaleString()}
               </div>
             </div>
           ))}
