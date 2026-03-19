@@ -4,12 +4,11 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Link from 'next/link';
 import { getAllTags } from '../lib/tags';
-// 修正后的日期函数导入
+// 日期处理函数
 import format from 'date-fns/format';
 import subDays from 'date-fns/subDays';
-import zhCN from 'date-fns/locale/zh-CN';
 
-// 定义类型（文件顶部）
+// 定义核心类型
 interface Tag {
   id: string;
   name: string;
@@ -20,12 +19,8 @@ interface ErrorQuestion {
   question_content: string;
   tag_ids: string[];
   tag_names?: string[];
-  question_image_url: string;
-  error_reason: string;
-  correct_answer: string;
-  correct_answer_image_url: string;
   create_time: string;
-  error_question_logs: { count: number } | null;
+  practice_count: number; // 练习次数
 }
 
 export default function Home() {
@@ -40,36 +35,51 @@ export default function Home() {
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 
-  // 获取所有标签和错题
+  // 获取所有标签和错题数据
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // 获取标签列表
+        // 1. 获取标签列表
         const tagList = await getAllTags();
         setTags(tagList);
 
-        // 获取所有错题
-        const { data, error } = await supabase
+        // 2. 获取错题基础信息（仅核心字段）
+        const { data: questionData } = await supabase
           .from('error_questions')
           .select(`
-            *,
-            error_question_logs(count)
+            id,
+            question_content,
+            tag_ids,
+            create_time
           `)
           .order('create_time', { ascending: false });
 
-        if (error) throw error;
-        
-        // 关联标签名称 - 关键修复：给 tagId 添加 string 类型注解
-        const questionsWithTags = (data || []).map(question => ({
-          ...question,
-          tag_names: question.tag_ids.map((tagId: string) =>  // 添加类型注解
-            tagList.find(tag => tag.id === tagId)?.name || ''
-          ).filter(Boolean)
-        })) as ErrorQuestion[];
-        
-        setErrorQuestions(questionsWithTags);
-        setFilteredQuestions(questionsWithTags);
+        // 3. 补充每道题的练习次数
+        const questionsWithPracticeCount = await Promise.all(
+          (questionData || []).map(async (item) => {
+            // 查询练习次数
+            const { count: practiceCount } = await supabase
+              .from('error_question_logs')
+              .select('*', { count: 'exact', head: true })
+              .eq('question_id', item.id);
+
+            // 关联标签名称
+            return {
+              id: item.id,
+              question_content: item.question_content || '',
+              tag_ids: item.tag_ids || [],
+              tag_names: item.tag_ids.map((tagId: string) => 
+                tagList.find(tag => tag.id === tagId)?.name || ''
+              ).filter(Boolean),
+              create_time: item.create_time,
+              practice_count: practiceCount || 0
+            };
+          })
+        );
+
+        setErrorQuestions(questionsWithPracticeCount);
+        setFilteredQuestions(questionsWithPracticeCount);
       } catch (error) {
         console.error('获取数据失败:', error);
         alert('获取数据失败，请刷新页面重试');
@@ -81,16 +91,16 @@ export default function Home() {
     fetchData();
   }, []);
 
-  // 筛选错题
+  // 筛选逻辑
   useEffect(() => {
     if (errorQuestions.length === 0) return;
 
     const filtered = errorQuestions.filter(question => {
-      // 1. 题目内容筛选
+      // 1. 题目内容关键词筛选
       const matchesText = searchText === '' || 
         question.question_content.toLowerCase().includes(searchText.toLowerCase());
       
-      // 2. 时间筛选
+      // 2. 时间范围筛选
       const questionDate = new Date(question.create_time);
       const start = new Date(`${startDate} 00:00:00`);
       const end = new Date(`${endDate} 23:59:59`);
@@ -123,13 +133,18 @@ export default function Home() {
     setSelectedTagIds([]);
   };
 
+  // 格式化日期显示
+  const formatDisplayDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString('zh-CN');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto">
         {/* 页面头部 */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-4 md:mb-0">错题管理系统</h1>
+            <h1 className="text-2xl font-bold text-gray-800 mb-4 md:mb-0">错题管理系统</h1>
             <div className="flex flex-wrap gap-3">
               <Link 
                 href="/add-question" 
@@ -152,7 +167,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 查询区域 */}
+          {/* 查询筛选区域 */}
           <div className="bg-gray-50 rounded-lg p-4 border">
             <h2 className="text-lg font-medium text-gray-700 mb-4">错题查询</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -201,11 +216,11 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 标签筛选 - 给 tag 添加 string 类型注解 */}
+            {/* 标签筛选 */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">知识点标签</label>
               <div className="flex flex-wrap gap-2">
-                {tags.map((tag: Tag) => (  // 添加类型注解
+                {tags.map((tag: Tag) => (
                   <button
                     key={tag.id}
                     type="button"
@@ -224,7 +239,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 错题列表 */}
+        {/* 错题表格一览 */}
         {isLoading ? (
           <div className="bg-white rounded-xl shadow-lg p-8 text-center">
             <p className="text-lg text-gray-500">加载中...</p>
@@ -240,65 +255,80 @@ export default function Home() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredQuestions.map((question) => (
-              <div key={question.id} className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all overflow-hidden">
-                <div className="p-5">
-                  {/* 题目内容 */}
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2 line-clamp-2">
-                    {question.question_content || '无题目内容'}
-                  </h3>
-                  
-                  {/* 题目图片 */}
-                  {question.question_image_url && (
-                    <div className="my-3">
-                      <img 
-                        src={question.question_image_url} 
-                        alt="题目图片" 
-                        className="w-full h-auto max-h-40 object-contain rounded-lg border"
-                      />
-                    </div>
-                  )}
-                  
-                  {/* 标签 - 给 tag 添加 string 类型注解 */}
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {question.tag_names?.map((tag: string) => (  // 添加类型注解
-                      <span key={tag} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  
-                  {/* 错误原因 */}
-                  {question.error_reason && (
-                    <div className="text-sm text-gray-600 mb-2">
-                      <span className="font-medium">错误原因：</span>
-                      {question.error_reason}
-                    </div>
-                  )}
-                  
-                  {/* 练习次数 */}
-                  <div className="text-sm text-gray-500 mb-3">
-                    练习次数：{question.error_question_logs?.count || 0}
-                  </div>
-                  
-                  {/* 添加时间 */}
-                  <div className="text-xs text-gray-400">
-                    添加时间：{new Date(question.create_time).toLocaleString('zh-CN')}
-                  </div>
-                </div>
-                
-                {/* 底部信息 */}
-                <div className="bg-gray-50 px-5 py-3 border-t flex justify-between items-center">
-                  <span className="text-xs text-gray-500">ID: {question.id.substring(0, 8)}</span>
-                  {question.correct_answer_image_url && (
-                    <span className="text-xs text-green-600">
-                      ✔ 有答案图片
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      序号
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      题目ID
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      题目内容
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      知识点标签
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      练习次数
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      添加时间
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredQuestions.map((question, index) => (
+                    <tr key={question.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {index + 1}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                        {question.id.substring(0, 8)}... {/* 缩短ID显示 */}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xl truncate">
+                        {question.question_content || '无题目内容'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {question.tag_names?.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {question.tag_names.map((tag: string) => (
+                              <span key={tag} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-xs">无标签</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          question.practice_count === 0 
+                            ? 'bg-gray-100 text-gray-800' 
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {question.practice_count} 次
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatDisplayDate(question.create_time)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 表格底部统计 */}
+            <div className="px-6 py-4 bg-gray-50 border-t">
+              <p className="text-sm text-gray-700">
+                共 <span className="font-medium">{filteredQuestions.length}</span> 条错题记录
+              </p>
+            </div>
           </div>
         )}
       </div>
