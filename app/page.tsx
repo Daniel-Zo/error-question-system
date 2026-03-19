@@ -1,5 +1,4 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Link from 'next/link';
@@ -38,13 +37,11 @@ export default function Home() {
   });
   const [isEditing, setIsEditing] = useState(false);
 
-  // 查询条件
   const [searchText, setSearchText] = useState('');
   const [startDate, setStartDate] = useState(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [filterTagIds, setFilterTagIds] = useState<string[]>([]);
 
-  // 刷新数据
   const refreshData = async () => {
     setIsLoading(true);
     try {
@@ -71,7 +68,6 @@ export default function Home() {
             .from('error_question_logs')
             .select('*', { count: 'exact', head: true })
             .eq('question_id', item.id);
-
           return {
             id: item.id,
             question_content: item.question_content || '',
@@ -88,7 +84,6 @@ export default function Home() {
           };
         })
       );
-
       setErrorQuestions(questionsWithPracticeCount);
       filterQuestions(questionsWithPracticeCount);
     } catch (error) {
@@ -98,7 +93,6 @@ export default function Home() {
     }
   };
 
-  // 过滤
   const filterQuestions = (source: ErrorQuestion[]) => {
     const filtered = source.filter(q => {
       const matchText = !searchText || q.question_content.toLowerCase().includes(searchText.toLowerCase());
@@ -121,10 +115,8 @@ export default function Home() {
     if (errorQuestions.length > 0) filterQuestions(errorQuestions);
   }, [searchText, startDate, endDate, filterTagIds]);
 
-  // 截断20字
   const truncate = (s: string, n = 20) => s.length > n ? s.slice(0, n) + '...' : s;
 
-  // 打开详情
   const openDetail = (q: ErrorQuestion) => {
     setSelectedQuestion(q);
     setEditForm({
@@ -134,7 +126,6 @@ export default function Home() {
     setIsEditing(false);
   };
 
-  // 保存修改
   const handleUpdate = async () => {
     if (!selectedQuestion) return;
     await supabase
@@ -148,7 +139,6 @@ export default function Home() {
     setIsEditing(false);
   };
 
-  // 删除
   const handleDelete = async () => {
     if (!selectedQuestion) return;
     if (!confirm('确定删除该题目？')) return;
@@ -157,7 +147,6 @@ export default function Home() {
     await refreshData();
   };
 
-  // 重置筛选
   const resetFilter = () => {
     setSearchText('');
     setStartDate(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
@@ -168,7 +157,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="container mx-auto">
-        {/* 头部 */}
         <div className="bg-white rounded-xl shadow p-6 mb-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
             <h1 className="text-2xl font-bold">错题管理系统</h1>
@@ -179,7 +167,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 查询区域 */}
           <div className="bg-gray-50 p-4 rounded border">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -238,7 +225,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 表格 */}
         {isLoading ? (
           <div className="bg-white p-8 rounded-xl shadow text-center">加载中...</div>
         ) : filteredQuestions.length === 0 ? (
@@ -267,7 +253,6 @@ export default function Home() {
                           {truncate(q.question_content)}
                         </button>
                       </td>
-                      {/* 表格标签：多个用 、 分隔 */}
                       <td className="px-4 py-3 text-sm text-gray-700">
                         {(q.tag_names || []).join('、') || '无标签'}
                       </td>
@@ -283,7 +268,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* 详情 + 编辑 + 删除 */}
         {selectedQuestion && (
           <div className="mt-6 bg-white p-6 rounded-xl shadow border-l-4 border-blue-500">
             <div className="flex justify-between items-center mb-4">
@@ -302,10 +286,24 @@ export default function Home() {
                 <p className="mb-2"><strong>标签：</strong>{(selectedQuestion.tag_names || []).join('、') || '无标签'}</p>
 
                 {selectedQuestion.question_image_url && (
-                  <img
-                    src={selectedQuestion.question_image_url}
-                    className="max-h-[300px] w-auto object-contain my-3 rounded border"
-                  />
+                  <div className="my-3">
+                    <img
+                      src={selectedQuestion.question_image_url}
+                      alt="题目图片"
+                      className="rounded-lg border object-contain"
+                      style={{ maxHeight: '240px', maxWidth: '100%' }}
+                    />
+                  </div>
+                )}
+                {selectedQuestion.correct_answer_image_url && (
+                  <div className="my-3">
+                    <img
+                      src={selectedQuestion.correct_answer_image_url}
+                      alt="答案图片"
+                      className="rounded-lg border object-contain"
+                      style={{ maxHeight: '240px', maxWidth: '100%' }}
+                    />
+                  </div>
                 )}
               </div>
             ) : (
@@ -320,7 +318,6 @@ export default function Home() {
                   />
                 </div>
 
-                {/* 标签可编辑：勾选/取消 */}
                 <div>
                   <label className="block text-sm mb-2">知识点标签（可多选）</label>
                   <div className="flex flex-wrap gap-2">
