@@ -292,10 +292,11 @@ export default function Home() {
                       <td className="px-6 py-4 text-sm text-gray-900 max-w-xl truncate">
                         {question.question_content || '无题目内容'}
                       </td>
+                      {/* 关键修复：先兜底为空数组，再判断长度 */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {question.tag_names?.length > 0 ? (
+                        {((question.tag_names || []).length > 0) ? (
                           <div className="flex flex-wrap gap-1">
-                            {question.tag_names.map((tag: string) => (
+                            {(question.tag_names || []).map((tag: string) => (
                               <span key={tag} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
                                 {tag}
                               </span>
