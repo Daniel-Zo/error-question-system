@@ -36,7 +36,6 @@ export default function Stats() {
         const { count: total } = await supabase.from('error_question_logs').select('*', { count: 'exact', head: true }).eq('question_id', q.id);
         const { count: ok } = await supabase.from('error_question_logs').select('*', { count: 'exact', head: true }).eq('question_id', q.id).eq('is_correct', true);
         
-        // 修复类型：全部赋默认值 0
         const totalCount = total ?? 0;
         const correctCount = ok ?? 0;
         const errorCount = totalCount - correctCount;
@@ -49,13 +48,13 @@ export default function Stats() {
           correct_count: correctCount,
           error_count: errorCount,
           accuracy: accuracy,
-          tag_names: q.tag_names
+          tag_names: q.tag_names as string[] | undefined
         };
       }));
 
       const tagMap: Record<string, { q: number, p: number, c: number }> = {};
       stats.forEach(s => {
-        (s.tag_names || []).forEach(t => {
+        (s.tag_names || []).forEach((t: string) => {
           if (!tagMap[t]) tagMap[t] = { q: 0, p: 0, c: 0 };
           tagMap[t].q += 1;
           tagMap[t].p += s.practice_count;
