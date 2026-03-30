@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { getAllTags } from '../lib/tags';
+import { getAllTags } from '@/lib/tags';
 import format from 'date-fns/format';
 import subDays from 'date-fns/subDays';
 

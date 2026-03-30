@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { getAllTags, createTag } from '../lib/tags';
+import { supabase } from '@/lib/supabase';
+import { getAllTags, createTag } from '@/lib/tags';
 import { useRouter } from 'next/navigation';
 
 interface Tag {
