@@ -1,43 +1,60 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { getAllTags, createTag } from '../lib/tags';
 import { useRouter } from 'next/navigation';
-import Tesseract from 'tesseract.js';
-import Link from 'next/link';
-import { getAllTags, addNewTag } from '../../lib/tags';
 
-// 表单验证规则
-const errorQuestionSchema = z.object({
-  questionContent: z.string().optional(),
-  tagIds: z.array(z.string()).min(1, '至少选择一个知识点标签'),
-  newTagName: z.string().optional(),
-  errorReason: z.string().optional(),
-  correctAnswer: z.string().optional(),
-});
+interface Tag {
+  id: string;
+  name: string;
+}
 
-type ErrorQuestionFormData = z.infer<typeof errorQuestionSchema>;
+// 上传图片到Supabase存储
+const uploadImage = async (file: File, folder = 'questions') => {
+  if (!file) return null;
+  
+  const fileName = `${Date.now()}-${file.name}`;
+  const filePath = `${folder}/${fileName}`;
+  
+  const { data, error } = await supabase.storage
+    .from('error_question_images')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false
+    });
+  
+  if (error) {
+    console.error('上传失败:', error);
+    alert('图片上传失败，请重试');
+    return null;
+  }
+  
+  // 获取图片URL
+  const { data: urlData } = await supabase.storage
+    .from('error_question_images')
+    .getPublicUrl(filePath);
+  
+  return urlData.publicUrl;
+};
 
 export default function AddQuestion() {
-  const [imageUrl, setImageUrl] = useState<string>('');
-  const [correctAnswerImageUrl, setCorrectAnswerImageUrl] = useState<string>('');
-  const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [isOcrLoading, setIsOcrLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isUploadingAnswer, setIsUploadingAnswer] = useState(false);
   const router = useRouter();
-
-  // 初始化表单
-  const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<ErrorQuestionFormData>({
-    resolver: zodResolver(errorQuestionSchema),
-    defaultValues: { tagIds: [] }
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [newTagName, setNewTagName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // 表单状态
+  const [formData, setFormData] = useState({
+    question_content: '',
+    error_reason: '',
+    correct_answer: '',
+    tag_ids: [] as string[],
+    question_image: null as File | null,
+    correct_answer_image: null as File | null,
+    question_image_url: '',
+    correct_answer_image_url: ''
   });
-
-  const newTagName = watch('newTagName');
 
   // 获取标签列表
   useEffect(() => {
@@ -48,231 +65,169 @@ export default function AddQuestion() {
     fetchTags();
   }, []);
 
-  // 处理题目图片上传 + OCR识别
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 处理图片选择
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'question' | 'answer') => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    setIsOcrLoading(true);
-    try {
-      // OCR识别图片文字
-      const { data: { text } } = await Tesseract.recognize(file, 'chi_sim');
-      setValue('questionContent', text);
-
-      // 上传图片到Supabase存储
-      setIsUploading(true);
-      const fileName = `question_${Date.now()}_${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase
-        .storage
-        .from('error_question_images')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (uploadError) {
-        console.error('题目图片上传错误:', uploadError);
-        throw uploadError;
-      }
-
-      // 获取图片URL
-      const { data: urlData } = supabase
-        .storage
-        .from('error_question_images')
-        .getPublicUrl(uploadData.path);
-      setImageUrl(urlData.publicUrl);
-      alert('题目图片上传成功，文字已识别！');
-    } catch (error) {
-      console.error('上传失败详情:', error);
-      alert(`题目图片上传失败，但文字已识别。错误：${(error as Error).message}`);
-    } finally {
-      setIsOcrLoading(false);
-      setIsUploading(false);
-    }
-  };
-
-  // 处理正确答案图片上传
-  const handleAnswerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploadingAnswer(true);
-    try {
-      // 上传图片到Supabase存储
-      const fileName = `answer_${Date.now()}_${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase
-        .storage
-        .from('error_question_images')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
-
-      if (uploadError) {
-        console.error('答案图片上传错误:', uploadError);
-        throw uploadError;
-      }
-
-      // 获取图片URL
-      const { data: urlData } = supabase
-        .storage
-        .from('error_question_images')
-        .getPublicUrl(uploadData.path);
-      setCorrectAnswerImageUrl(urlData.publicUrl);
-      alert('正确答案图片上传成功！');
-    } catch (error) {
-      console.error('答案图片上传失败:', error);
-      alert(`正确答案图片上传失败：${(error as Error).message}`);
-    } finally {
-      setIsUploadingAnswer(false);
-    }
-  };
-
-  // 添加新标签
-  const handleAddNewTag = async () => {
-    if (!newTagName || newTagName.trim() === '') return;
     
-    const tagId = await addNewTag(newTagName);
-    if (tagId) {
-      // 更新标签列表和选中状态
-      const newTag = { id: tagId, name: newTagName.trim() };
-      setTags([...tags, newTag]);
-      setSelectedTags([...selectedTags, tagId]);
-      setValue('newTagName', '');
+    if (type === 'question') {
+      setFormData(prev => ({ ...prev, question_image: file }));
+    } else {
+      setFormData(prev => ({ ...prev, correct_answer_image: file }));
     }
   };
 
-  // 切换标签选中状态
+  // 切换标签选择
   const toggleTag = (tagId: string) => {
-    setSelectedTags(prev => 
-      prev.includes(tagId) 
-        ? prev.filter(id => id !== tagId) 
-        : [...prev, tagId]
-    );
-    setValue('tagIds', selectedTags.includes(tagId) 
-      ? selectedTags.filter(id => id !== tagId) 
-      : [...selectedTags, tagId]
-    );
+    setFormData(prev => ({
+      ...prev,
+      tag_ids: prev.tag_ids.includes(tagId)
+        ? prev.tag_ids.filter(id => id !== tagId)
+        : [...prev.tag_ids, tagId]
+    }));
   };
 
-  // 提交错题
-  const onSubmit = async (data: ErrorQuestionFormData) => {
+  // 创建新标签
+  const handleCreateTag = async () => {
+    if (!newTagName.trim()) return;
+    
+    // 检查标签是否已存在
+    const exists = tags.some(tag => tag.name.toLowerCase() === newTagName.toLowerCase().trim());
+    if (exists) {
+      alert('该标签已存在');
+      return;
+    }
+    
+    const newTag = await createTag(newTagName.trim());
+    if (newTag) {
+      setTags(prev => [...prev, newTag]);
+      setNewTagName('');
+      // 自动选中新标签
+      toggleTag(newTag.id);
+    }
+  };
+
+  // 提交表单
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.question_content.trim()) {
+      alert('请输入题目内容');
+      return;
+    }
+    
+    setIsLoading(true);
+    
     try {
-      // 准备提交数据
-      const submitData = {
-        question_content: data.questionContent || '',
-        tag_ids: selectedTags,
-        question_image_url: imageUrl,
-        error_reason: data.errorReason || '',
-        correct_answer: data.correctAnswer || '',
-        correct_answer_image_url: correctAnswerImageUrl
-      };
-
-      const { error } = await supabase
+      // 1. 上传图片
+      let questionImageUrl = '';
+      let answerImageUrl = '';
+      
+      if (formData.question_image) {
+        questionImageUrl = await uploadImage(formData.question_image) || '';
+      }
+      
+      if (formData.correct_answer_image) {
+        answerImageUrl = await uploadImage(formData.correct_answer_image, 'answers') || '';
+      }
+      
+      // 2. 创建错题记录
+      const { data, error } = await supabase
         .from('error_questions')
-        .insert([submitData]);
-
+        .insert([
+          {
+            question_content: formData.question_content,
+            error_reason: formData.error_reason,
+            correct_answer: formData.correct_answer,
+            tag_ids: formData.tag_ids,
+            question_image_url: questionImageUrl,
+            correct_answer_image_url: answerImageUrl,
+            create_time: new Date().toISOString()
+          }
+        ])
+        .select();
+      
       if (error) throw error;
+      
       alert('错题添加成功！');
       router.push('/');
     } catch (error) {
-      alert(`添加失败：${(error as Error).message}`);
-      console.error('添加错题错误:', error);
+      console.error('添加失败:', error);
+      alert('添加失败，请重试');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto max-w-3xl">
-        {/* 返回按钮 */}
-        <div className="mb-6">
-          <Link 
-            href="/" 
-            className="inline-flex items-center text-blue-600 hover:text-blue-800 transition-colors font-medium"
-          >
-            ← 返回主页
-          </Link>
-        </div>
-
+      <div className="container mx-auto px-4 max-w-4xl">
+        {/* 大标题 */}
+        <h1 className="text-4xl font-bold text-gray-900 mb-8">添加新错题</h1>
+        
         {/* 表单卡片 */}
-        <div className="bg-white rounded-xl shadow-lg p-6 md:p-8">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6">添加错题</h1>
-          
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* 题目图片上传 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                题目图片（可选，自动识别文字）
-              </label>
-              <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="block w-full text-sm text-gray-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-lg file:border-0
-                    file:bg-blue-50 file:text-blue-700
-                    hover:file:bg-blue-100
-                    transition-all"
-                  disabled={isOcrLoading || isUploading}
-                />
-                {isOcrLoading && (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-600 text-sm">
-                    识别中...
-                  </span>
-                )}
-                {isUploading && (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-600 text-sm">
-                    上传中...
-                  </span>
-                )}
-              </div>
-              {imageUrl && (
-                <div className="mt-3">
-                  <p className="text-sm text-gray-500 mb-2">已上传图片预览：</p>
-                  <img 
-                    src={imageUrl} 
-                    alt="题目预览" 
-                    className="rounded-lg max-w-full h-auto max-h-60 object-contain border"
-                  />
-                </div>
-              )}
-            </div>
-
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* 题目内容 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                题目内容（可选）
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                题目内容 <span className="text-red-500">*</span>
               </label>
               <textarea
-                {...register('questionContent')}
+                value={formData.question_content}
+                onChange={(e) => setFormData({...formData, question_content: e.target.value})}
+                className="w-full px-4 py-3 text-lg border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                placeholder="题目内容（图片识别后会自动填充）"
+                placeholder="请输入完整的题目内容"
+                required
               />
-              {errors.questionContent && (
-                <p className="text-red-500 text-sm">{errors.questionContent.message}</p>
-              )}
+            </div>
+
+            {/* 错误原因 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                错误原因
+              </label>
+              <textarea
+                value={formData.error_reason}
+                onChange={(e) => setFormData({...formData, error_reason: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                rows={2}
+                placeholder="请描述错误原因"
+              />
+            </div>
+
+            {/* 正确答案 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                正确答案
+              </label>
+              <textarea
+                value={formData.correct_answer}
+                onChange={(e) => setFormData({...formData, correct_answer: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                rows={2}
+                placeholder="请输入正确答案"
+              />
             </div>
 
             {/* 知识点标签 */}
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700">
-                知识点标签（必填）
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                知识点标签
               </label>
               
-              {/* 已存在的标签 */}
-              <div className="flex flex-wrap gap-2 mb-3">
+              {/* 现有标签 */}
+              <div className="flex flex-wrap gap-2 mb-4">
                 {tags.map(tag => (
                   <button
                     key={tag.id}
                     type="button"
                     onClick={() => toggleTag(tag.id)}
-                    className={`px-3 py-1 rounded-full text-sm transition-all ${
-                      selectedTags.includes(tag.id)
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                    className={`px-3 py-1 rounded-full text-sm ${
+                      formData.tag_ids.includes(tag.id) 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-100 text-gray-800'
                     }`}
                   >
                     {tag.name}
@@ -283,94 +238,63 @@ export default function AddQuestion() {
               {/* 添加新标签 */}
               <div className="flex gap-2">
                 <input
-                  {...register('newTagName')}
                   type="text"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="输入新标签名并点击添加"
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                  placeholder="输入新标签名称"
                 />
                 <button
                   type="button"
-                  onClick={handleAddNewTag}
-                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-all"
+                  onClick={handleCreateTag}
+                  className="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700"
                 >
                   添加标签
                 </button>
               </div>
-              
-              {errors.tagIds && (
-                <p className="text-red-500 text-sm">{errors.tagIds.message}</p>
-              )}
             </div>
 
-            {/* 错误原因 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                错误原因（可选）
+            {/* 题目图片 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                题目图片
               </label>
               <input
-                {...register('errorReason')}
-                type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="例如：粗心大意,知识点未掌握"
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleImageChange(e, 'question')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
               />
             </div>
 
-            {/* 正确答案文字 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                正确答案（可选）
+            {/* 答案图片 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                答案图片
               </label>
-              <textarea
-                {...register('correctAnswer')}
-                rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="请输入正确答案"
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleImageChange(e, 'answer')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
               />
-            </div>
-
-            {/* 正确答案图片 */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                正确答案图片（可选）
-              </label>
-              <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAnswerImageUpload}
-                  className="block w-full text-sm text-gray-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-lg file:border-0
-                    file:bg-green-50 file:text-green-700
-                    hover:file:bg-green-100
-                    transition-all"
-                  disabled={isUploadingAnswer}
-                />
-                {isUploadingAnswer && (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-green-600 text-sm">
-                    上传中...
-                  </span>
-                )}
-              </div>
-              {correctAnswerImageUrl && (
-                <div className="mt-3">
-                  <p className="text-sm text-gray-500 mb-2">答案图片预览：</p>
-                  <img 
-                    src={correctAnswerImageUrl} 
-                    alt="答案预览" 
-                    className="rounded-lg max-w-full h-auto max-h-60 object-contain border"
-                  />
-                </div>
-              )}
             </div>
 
             {/* 提交按钮 */}
-            <div className="pt-2">
+            <div className="flex gap-4">
               <button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-all shadow-md hover:shadow-lg"
+                disabled={isLoading}
+                className="px-8 py-3 text-lg font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
               >
-                保存错题
+                {isLoading ? '提交中...' : '保存错题'}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/')}
+                className="px-8 py-3 text-lg font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                取消
               </button>
             </div>
           </form>

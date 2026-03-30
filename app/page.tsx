@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Link from 'next/link';
@@ -24,6 +25,19 @@ interface ErrorQuestion {
   correct_answer_image_url?: string;
 }
 
+// 提取图片删除工具函数
+const deleteImageFromStorage = async (imageUrl?: string) => {
+  if (!imageUrl) return;
+  try {
+    // 解析Supabase存储路径
+    const urlParts = new URL(imageUrl);
+    const path = decodeURIComponent(urlParts.pathname.split('/').slice(3).join('/'));
+    await supabase.storage.from('error_question_images').remove([path]);
+  } catch (error) {
+    console.error('删除图片失败:', error);
+  }
+};
+
 export default function Home() {
   const [errorQuestions, setErrorQuestions] = useState<ErrorQuestion[]>([]);
   const [filteredQuestions, setFilteredQuestions] = useState<ErrorQuestion[]>([]);
@@ -37,11 +51,13 @@ export default function Home() {
   });
   const [isEditing, setIsEditing] = useState(false);
 
+  // 查询条件
   const [searchText, setSearchText] = useState('');
   const [startDate, setStartDate] = useState(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [filterTagIds, setFilterTagIds] = useState<string[]>([]);
 
+  // 刷新数据
   const refreshData = async () => {
     setIsLoading(true);
     try {
@@ -84,6 +100,7 @@ export default function Home() {
           };
         })
       );
+
       setErrorQuestions(questionsWithPracticeCount);
       filterQuestions(questionsWithPracticeCount);
     } catch (error) {
@@ -93,6 +110,7 @@ export default function Home() {
     }
   };
 
+  // 过滤
   const filterQuestions = (source: ErrorQuestion[]) => {
     const filtered = source.filter(q => {
       const matchText = !searchText || q.question_content.toLowerCase().includes(searchText.toLowerCase());
@@ -115,8 +133,10 @@ export default function Home() {
     if (errorQuestions.length > 0) filterQuestions(errorQuestions);
   }, [searchText, startDate, endDate, filterTagIds]);
 
+  // 截断20字
   const truncate = (s: string, n = 20) => s.length > n ? s.slice(0, n) + '...' : s;
 
+  // 打开详情
   const openDetail = (q: ErrorQuestion) => {
     setSelectedQuestion(q);
     setEditForm({
@@ -126,6 +146,7 @@ export default function Home() {
     setIsEditing(false);
   };
 
+  // 保存修改
   const handleUpdate = async () => {
     if (!selectedQuestion) return;
     await supabase
@@ -139,14 +160,33 @@ export default function Home() {
     setIsEditing(false);
   };
 
+  // 删除（包含图片删除）
   const handleDelete = async () => {
     if (!selectedQuestion) return;
-    if (!confirm('确定删除该题目？')) return;
-    await supabase.from('error_questions').delete().eq('id', selectedQuestion.id);
-    setSelectedQuestion(null);
-    await refreshData();
+    if (!confirm('确定删除该题目？删除后不可恢复！')) return;
+    
+    try {
+      // 1. 删除关联图片
+      await deleteImageFromStorage(selectedQuestion.question_image_url);
+      await deleteImageFromStorage(selectedQuestion.correct_answer_image_url);
+      
+      // 2. 删除错题记录
+      await supabase.from('error_questions').delete().eq('id', selectedQuestion.id);
+      
+      // 3. 删除练习记录
+      await supabase.from('error_question_logs').delete().eq('question_id', selectedQuestion.id);
+      
+      // 4. 刷新数据
+      setSelectedQuestion(null);
+      await refreshData();
+      alert('删除成功！');
+    } catch (error) {
+      console.error('删除失败:', error);
+      alert('删除失败，请重试！');
+    }
   };
 
+  // 重置筛选
   const resetFilter = () => {
     setSearchText('');
     setStartDate(format(subDays(new Date(), 7), 'yyyy-MM-dd'));
@@ -156,108 +196,143 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto">
-        <div className="bg-white rounded-xl shadow p-6 mb-6">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
-            <h1 className="text-2xl font-bold">错题管理系统</h1>
-            <div className="flex gap-6 mt-3 md:mt-0">
-              <Link href="/add-question" className="bg-blue-600 text-white px-5 py-2 rounded">添加错题</Link>
-              <Link href="/daily-practice" className="bg-green-600 text-white px-5 py-2 rounded">每日一练</Link>
-              <Link href="/stats" className="bg-purple-600 text-white px-5 py-2 rounded">统计</Link>
+      <div className="container mx-auto px-4">
+        {/* 大标题 */}
+        <h1 className="text-4xl font-bold text-gray-900 mb-8">错题管理系统</h1>
+
+        {/* 核心查询区 */}
+        <div className="flex items-center gap-4 mb-8 max-w-3xl">
+          <input
+            type="text"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="输入题目关键词查询"
+            className="flex-1 px-4 py-3 text-lg border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={() => filterQuestions(errorQuestions)}
+            className="px-8 py-3 text-lg font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            查询
+          </button>
+        </div>
+
+        {/* 高级筛选区 */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-8 max-w-5xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">开始日期</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">结束日期</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={resetFilter}
+                className="w-full px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                重置筛选
+              </button>
             </div>
           </div>
 
-          <div className="bg-gray-50 p-4 rounded border">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-sm block mb-1">题目内容</label>
-                <input
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  className="w-full border p-2 rounded"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-sm block mb-1">开始日期</label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full border p-2 rounded"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm block mb-1">结束日期</label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full border p-2 rounded"
-                  />
-                </div>
-              </div>
-              <div className="flex items-end">
-                <button onClick={resetFilter} className="w-full bg-gray-200 p-2 rounded">重置</button>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <label className="text-sm block mb-2">标签筛选</label>
-              <div className="flex flex-wrap gap-2">
-                {tags.map(tag => (
-                  <button
-                    key={tag.id}
-                    onClick={() => {
-                      setFilterTagIds(prev =>
-                        prev.includes(tag.id) ? prev.filter(x => x !== tag.id) : [...prev, tag.id]
-                      );
-                    }}
-                    className={`px-2 py-1 rounded-full text-xs ${
-                      filterTagIds.includes(tag.id) ? 'bg-blue-600 text-white' : 'bg-gray-100'
-                    }`}
-                  >
-                    {tag.name}
-                  </button>
-                ))}
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">知识点标签</label>
+            <div className="flex flex-wrap gap-2">
+              {tags.map(tag => (
+                <button
+                  key={tag.id}
+                  onClick={() => {
+                    setFilterTagIds(prev =>
+                      prev.includes(tag.id) ? prev.filter(x => x !== tag.id) : [...prev, tag.id]
+                    );
+                  }}
+                  className={`px-3 py-1 rounded-full text-sm ${
+                    filterTagIds.includes(tag.id) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  {tag.name}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
+        {/* 导航按钮 */}
+        <div className="flex gap-4 mb-8">
+          <Link
+            href="/add-question"
+            className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700"
+          >
+            添加错题
+          </Link>
+          <Link
+            href="/daily-practice"
+            className="px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700"
+          >
+            每日一练
+          </Link>
+          <Link
+            href="/stats"
+            className="px-4 py-2 text-white bg-purple-600 rounded-md hover:bg-purple-700"
+          >
+            错题统计
+          </Link>
+        </div>
+
+        {/* 结果列表区 */}
         {isLoading ? (
-          <div className="bg-white p-8 rounded-xl shadow text-center">加载中...</div>
+          <div className="bg-white rounded-lg shadow-sm p-8 text-center text-gray-500">
+            加载中...
+          </div>
         ) : filteredQuestions.length === 0 ? (
-          <div className="bg-white p-8 rounded-xl shadow text-center">暂无数据</div>
+          <div className="bg-white rounded-lg shadow-sm p-8 text-center text-gray-500">
+            暂无符合条件的记录
+          </div>
         ) : (
-          <div className="bg-white rounded-xl shadow overflow-hidden">
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs text-gray-500">序号</th>
-                    <th className="px-4 py-2 text-left text-xs text-gray-500">ID</th>
-                    <th className="px-4 py-2 text-left text-xs text-gray-500">题目内容</th>
-                    <th className="px-4 py-2 text-left text-xs text-gray-500">标签</th>
-                    <th className="px-4 py-2 text-left text-xs text-gray-500">练习次数</th>
-                    <th className="px-4 py-2 text-left text-xs text-gray-500">时间</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">序号</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">题目ID</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">题目内容</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">标签</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">练习次数</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">添加时间</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="bg-white divide-y divide-gray-200">
                   {filteredQuestions.map((q, i) => (
                     <tr key={q.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm">{i + 1}</td>
-                      <td className="px-4 py-3 text-sm font-mono">{q.id.slice(0, 6)}...</td>
-                      <td className="px-4 py-3 text-sm max-w-xs">
-                        <button onClick={() => openDetail(q)} className="text-blue-600 hover:underline text-left">
+                      <td className="px-6 py-4 text-sm text-gray-900">{i + 1}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900 font-mono">{q.id.slice(0, 8)}...</td>
+                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs">
+                        <button
+                          onClick={() => openDetail(q)}
+                          className="text-blue-600 hover:underline text-left"
+                        >
                           {truncate(q.question_content)}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
+                      <td className="px-6 py-4 text-sm text-gray-700">
                         {(q.tag_names || []).join('、') || '无标签'}
                       </td>
-                      <td className="px-4 py-3 text-sm">{q.practice_count}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
+                      <td className="px-6 py-4 text-sm text-gray-700">{q.practice_count} 次</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
                         {new Date(q.create_time).toLocaleString('zh-CN')}
                       </td>
                     </tr>
@@ -268,40 +343,48 @@ export default function Home() {
           </div>
         )}
 
+        {/* 详情/编辑区 */}
         {selectedQuestion && (
-          <div className="mt-6 bg-white p-6 rounded-xl shadow border-l-4 border-blue-500">
+          <div className="mt-8 bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">题目详情 {isEditing && '(编辑中)'}</h2>
+              <h2 className="text-xl font-bold text-gray-900">题目详情</h2>
               <div className="flex gap-3">
-                {!isEditing && <button onClick={() => setIsEditing(true)} className="text-blue-600">编辑</button>}
-                {isEditing && <button onClick={() => setIsEditing(false)} className="text-gray-600">取消</button>}
+                {!isEditing && (
+                  <button onClick={() => setIsEditing(true)} className="text-blue-600">编辑</button>
+                )}
+                {isEditing && (
+                  <button onClick={() => setIsEditing(false)} className="text-gray-600">取消</button>
+                )}
                 <button onClick={handleDelete} className="text-red-600">删除</button>
-                <button onClick={() => setSelectedQuestion(null)}>关闭</button>
+                <button onClick={() => setSelectedQuestion(null)} className="text-gray-600">关闭</button>
               </div>
             </div>
 
             {!isEditing ? (
               <div>
-                <p className="mb-2"><strong>题目：</strong>{selectedQuestion.question_content}</p>
-                <p className="mb-2"><strong>标签：</strong>{(selectedQuestion.tag_names || []).join('、') || '无标签'}</p>
-
+                <p className="mb-3 text-lg"><strong>题目：</strong>{selectedQuestion.question_content}</p>
+                <p className="mb-3"><strong>标签：</strong>{(selectedQuestion.tag_names || []).join('、') || '无标签'}</p>
+                {selectedQuestion.error_reason && (
+                  <p className="mb-3"><strong>错误原因：</strong>{selectedQuestion.error_reason}</p>
+                )}
+                {selectedQuestion.correct_answer && (
+                  <p className="mb-3"><strong>正确答案：</strong>{selectedQuestion.correct_answer}</p>
+                )}
                 {selectedQuestion.question_image_url && (
-                  <div className="my-3">
+                  <div className="my-4">
                     <img
                       src={selectedQuestion.question_image_url}
                       alt="题目图片"
-                      className="rounded-lg border object-contain"
-                      style={{ maxHeight: '240px', maxWidth: '100%' }}
+                      className="max-h-[240px] max-w-full object-contain rounded-md border"
                     />
                   </div>
                 )}
                 {selectedQuestion.correct_answer_image_url && (
-                  <div className="my-3">
+                  <div className="my-4">
                     <img
                       src={selectedQuestion.correct_answer_image_url}
                       alt="答案图片"
-                      className="rounded-lg border object-contain"
-                      style={{ maxHeight: '240px', maxWidth: '100%' }}
+                      className="max-h-[240px] max-w-full object-contain rounded-md border"
                     />
                   </div>
                 )}
@@ -309,17 +392,16 @@ export default function Home() {
             ) : (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm mb-1">题目内容</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">题目内容</label>
                   <textarea
-                    className="w-full border p-2 rounded"
-                    rows={3}
                     value={editForm.question_content}
                     onChange={(e) => setEditForm({ ...editForm, question_content: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    rows={3}
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm mb-2">知识点标签（可多选）</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">知识点标签</label>
                   <div className="flex flex-wrap gap-2">
                     {tags.map(tag => (
                       <button
@@ -330,8 +412,8 @@ export default function Home() {
                             : [...editForm.tag_ids, tag.id];
                           setEditForm({ ...editForm, tag_ids: next });
                         }}
-                        className={`px-3 py-1 rounded-full text-xs ${
-                          editForm.tag_ids.includes(tag.id) ? 'bg-blue-600 text-white' : 'bg-gray-100'
+                        className={`px-3 py-1 rounded-full text-sm ${
+                          editForm.tag_ids.includes(tag.id) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'
                         }`}
                       >
                         {tag.name}
@@ -339,10 +421,9 @@ export default function Home() {
                     ))}
                   </div>
                 </div>
-
                 <button
                   onClick={handleUpdate}
-                  className="bg-blue-600 text-white px-4 py-2 rounded"
+                  className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700"
                 >
                   保存修改
                 </button>

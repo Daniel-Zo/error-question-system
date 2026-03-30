@@ -1,400 +1,247 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../lib/supabase';
 import Link from 'next/link';
 
-// 统一定义类型（文件顶部）
-interface Tag {
+interface PracticeLog {
   id: string;
-  name: string;
+  question_id: string;
+  practice_time: string;
+  is_correct: boolean;
 }
 
+interface ErrorQuestion {
+  id: string;
+  question_content: string;
+  tag_names?: string[];
+}
+
+// 随机选择n道题目
+const getRandomQuestions = (questions: ErrorQuestion[], count = 5) => {
+  if (questions.length <= count) return questions;
+  
+  const shuffled = [...questions].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, count);
+};
+
 export default function DailyPractice() {
-  const [dailyPractices, setDailyPractices] = useState<any[]>([]);
-  const [currentPaper, setCurrentPaper] = useState<any>(null);
-  const [selectedHistoryPaper, setSelectedHistoryPaper] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [allQuestions, setAllQuestions] = useState<ErrorQuestion[]>([]);
+  const [practiceQuestions, setPracticeQuestions] = useState<ErrorQuestion[]>([]);
+  const [practiceLogs, setPracticeLogs] = useState<PracticeLog[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [isPracticing, setIsPracticing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // 获取历史练习记录
+  // 获取所有错题和练习记录
   useEffect(() => {
-    const fetchDailyPractices = async () => {
-      const { data, error } = await supabase
-        .from('daily_practice')
-        .select('*')
-        .order('generate_time', { ascending: false });
-
-      if (error) console.error('获取历史练习记录失败:', error);
-      else setDailyPractices(data || []);
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // 获取所有错题
+        const { data: questionData } = await supabase
+          .from('error_questions')
+          .select(`
+            id,
+            question_content,
+            tag_names
+          `);
+        
+        // 获取练习记录
+        const { data: logData } = await supabase
+          .from('error_question_logs')
+          .select(`
+            id,
+            question_id,
+            practice_time,
+            is_correct
+          `)
+          .order('practice_time', { ascending: false });
+        
+        setAllQuestions(questionData || []);
+        setPracticeLogs(logData || []);
+      } catch (error) {
+        console.error('加载失败:', error);
+      } finally {
+        setIsLoading(false);
+      }
     };
-
-    fetchDailyPractices();
+    
+    fetchData();
   }, []);
 
-  // 生成新的每日一练
-  const generateDailyPractice = async () => {
-    setIsLoading(true);
-    try {
-      const { data: questionIds, error } = await supabase
-        .from('error_questions')
-        .select('id')
-        .order('create_time', { ascending: false });
-
-      if (error) throw error;
-      const validQuestionIds = questionIds || [];
-      if (validQuestionIds.length === 0) {
-        alert('暂无错题，无法生成每日一练！');
-        return;
-      }
-
-      const randomQuestionIds = validQuestionIds
-        .sort(() => 0.5 - Math.random())
-        .slice(0, 10)
-        .map(item => item.id);
-
-      const { data: newPaper, error: insertError } = await supabase
-        .from('daily_practice')
-        .insert({
-          included_question_ids: randomQuestionIds,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      const logPromises = randomQuestionIds.map(questionId => 
-        supabase.from('error_question_logs')
-          .insert({
-            question_id: questionId,
-            selected_scene: 'Daily Practice'
-          })
-      );
-      await Promise.all(logPromises);
-
-      // 获取题目详情（paperDetails 在此处定义）
-      const { data: paperDetails } = await supabase
-        .from('error_questions')
-        .select(`
-          id,
-          question_content,
-          tag_ids,
-          knowledge_points,
-          correct_answer,
-          question_image_url,
-          correct_answer_image_url
-        `)
-        .in('id', randomQuestionIds);
-
-      // 获取标签列表
-      const { data: tags } = await supabase.from('tags').select('id, name');
-      
-      // 关联标签名称（正确作用域内处理）
-      const paperDetailsWithTags = (paperDetails || []).map(question => ({
-        ...question,
-        // 给 tagId 添加显式类型注解
-        tag_names: question.tag_ids.map((tagId: string) => 
-          (tags as Tag[]).find(tag => tag.id === tagId)?.name || ''
-        ).filter(Boolean)
-      }));
-
-      setCurrentPaper({
-        ...newPaper,
-        questionList: paperDetailsWithTags || [],
-      });
-
-      setDailyPractices(prev => [newPaper, ...(prev || [])]);
-      alert('每日一练生成成功！');
-    } catch (error) {
-      alert(`生成失败：${(error as Error).message}`);
-      console.error('生成每日一练错误:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 查看历史记录详情
-  const viewHistoryPaper = async (paper: any) => {
-    setIsLoadingHistory(true);
-    try {
-      // 获取标签列表
-      const { data: tags } = await supabase.from('tags').select('id, name');
-      
-      // 获取题目详情（paperDetails 在此处定义）
-      const { data: paperDetails, error } = await supabase
-        .from('error_questions')
-        .select(`
-          id,
-          question_content,
-          tag_ids,
-          knowledge_points,
-          correct_answer,
-          question_image_url,
-          correct_answer_image_url
-        `)
-        .in('id', paper.included_question_ids || []);
-
-      if (error) throw error;
-      
-      // 关联标签名称（正确作用域内处理）
-      const paperDetailsWithTags = (paperDetails || []).map(question => ({
-        ...question,
-        // 给 tagId 添加显式类型注解
-        tag_names: question.tag_ids.map((tagId: string) => 
-          (tags as Tag[]).find(tag => tag.id === tagId)?.name || ''
-        ).filter(Boolean)
-      }));
-
-      setSelectedHistoryPaper({
-        ...paper,
-        questionList: paperDetailsWithTags || [],
-      });
-    } catch (error) {
-      alert(`加载历史记录失败：${(error as Error).message}`);
-      console.error('加载历史记录错误:', error);
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  };
-
-  // 删除历史练习记录
-  const deleteHistoryPaper = async (paperId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm('确定要删除这条历史练习记录吗？此操作不可恢复！')) {
+  // 开始新的练习
+  const startPractice = () => {
+    if (allQuestions.length === 0) {
+      alert('暂无错题，请先添加错题！');
       return;
     }
+    
+    const randomQuestions = getRandomQuestions(allQuestions, 5);
+    setPracticeQuestions(randomQuestions);
+    setCurrentQuestionIndex(0);
+    setIsPracticing(true);
+  };
 
-    setIsDeleting(paperId);
+  // 记录练习结果
+  const recordPracticeResult = async (isCorrect: boolean) => {
+    const currentQuestion = practiceQuestions[currentQuestionIndex];
+    if (!currentQuestion) return;
+    
     try {
-      const { error: deletePaperError } = await supabase
-        .from('daily_practice')
-        .delete()
-        .eq('id', paperId);
-
-      if (deletePaperError) throw deletePaperError;
-
-      setDailyPractices(prev => prev.filter(paper => paper.id !== paperId));
+      // 添加练习记录
+      await supabase
+        .from('error_question_logs')
+        .insert([
+          {
+            question_id: currentQuestion.id,
+            practice_time: new Date().toISOString(),
+            is_correct: isCorrect
+          }
+        ]);
       
-      if (selectedHistoryPaper && selectedHistoryPaper.id === paperId) {
-        setSelectedHistoryPaper(null);
+      // 更新练习次数
+      const { data: countData } = await supabase
+        .from('error_question_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('question_id', currentQuestion.id);
+      
+      // 下一题或结束
+      if (currentQuestionIndex < practiceQuestions.length - 1) {
+        setCurrentQuestionIndex(prev => prev + 1);
+      } else {
+        setIsPracticing(false);
+        alert('练习完成！');
+        // 刷新练习记录
+        const { data: logData } = await supabase
+          .from('error_question_logs')
+          .select('*')
+          .order('practice_time', { ascending: false });
+        setPracticeLogs(logData || []);
       }
-
-      alert('历史记录删除成功！');
     } catch (error) {
-      alert(`删除失败：${(error as Error).message}`);
-      console.error('删除历史记录错误:', error);
-    } finally {
-      setIsDeleting(null);
+      console.error('记录失败:', error);
+      alert('记录练习结果失败，请重试');
     }
   };
 
-  // 关闭历史记录详情
-  const closeHistoryPaper = () => {
-    setSelectedHistoryPaper(null);
-  };
-
-  // 渲染题目列表
-  const renderQuestionList = (questionList: any[]) => {
-    if (!questionList || questionList.length === 0) {
-      return <p className="text-gray-500">暂无题目</p>;
-    }
-
-    return (
-      <div className="space-y-8 mt-4">
-        {questionList.map((question: any, index: number) => {
-          const tagNames = question.tag_names || [];
-          const questionContent = question.question_content || '无题目内容';
-          const isValidImageUrl = question.question_image_url && 
-                                  question.question_image_url.startsWith('https://') &&
-                                  question.question_image_url.trim() !== '';
-          
-          return (
-            <div key={question.id || `question-${index}`} className="border-b pb-6">
-              <h3 className="font-medium text-lg mb-2">
-                {index + 1}. {questionContent}
-              </h3>
-              
-              {/* 标签 - 关键修复：给 tag 添加 string 类型注解 */}
-              <div className="flex flex-wrap gap-1 mb-3">
-                {tagNames.map((tag: string) => (
-                  <span key={tag} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              
-              {/* 题目图片 */}
-              {isValidImageUrl && (
-                <div className="my-3 max-w-md">
-                  <p className="text-sm text-gray-500 mb-1">题目图片：</p>
-                  <div className="border rounded p-1 bg-gray-50">
-                    <img
-                      src={question.question_image_url}
-                      alt={`题目 ${index + 1}`}
-                      className="rounded object-contain max-w-full h-auto"
-                      style={{ maxHeight: '300px' }}
-                      onError={(e) => {
-                        const target = e.currentTarget as HTMLImageElement;
-                        target.alt = `题目 ${index + 1} 图片加载失败`;
-                        target.style.border = '1px solid red';
-                        target.style.padding = '2px';
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* 正确答案 */}
-              {question.correct_answer && (
-                <div className="mt-2 text-sm">
-                  <span className="text-green-600 font-medium">正确答案：</span> {question.correct_answer}
-                </div>
-              )}
-              
-              {/* 正确答案图片 */}
-              {question.correct_answer_image_url && (
-                <div className="my-3 max-w-md">
-                  <p className="text-sm text-gray-500 mb-1">答案图片：</p>
-                  <div className="border rounded p-1 bg-gray-50">
-                    <img
-                      src={question.correct_answer_image_url}
-                      alt={`答案 ${index + 1}`}
-                      className="rounded object-contain max-w-full h-auto"
-                      style={{ maxHeight: '300px' }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
+  // 截断文本
+  const truncate = (text: string, length = 30) => {
+    return text.length > length ? text.substring(0, length) + '...' : text;
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="container mx-auto">
-        {/* 页面头部 */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-gray-800">每日一练</h1>
-            <div className="flex gap-3">
-              <button
-                onClick={generateDailyPractice}
-                disabled={isLoading}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-70"
-              >
-                {isLoading ? '生成中...' : '生成新练习题'}
-              </button>
-              <Link 
-                href="/" 
-                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg transition-all"
-              >
-                返回首页
-              </Link>
-            </div>
-          </div>
+      <div className="container mx-auto px-4">
+        {/* 大标题 */}
+        <h1 className="text-4xl font-bold text-gray-900 mb-8">每日一练</h1>
+        
+        {/* 开始练习按钮 */}
+        <div className="mb-8">
+          <button
+            onClick={startPractice}
+            disabled={isLoading || isPracticing || allQuestions.length === 0}
+            className="px-8 py-3 text-lg font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+          >
+            {allQuestions.length === 0 ? '暂无错题可练习' : '开始新的练习'}
+          </button>
+          <Link
+            href="/"
+            className="ml-4 px-8 py-3 text-lg font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+          >
+            返回首页
+          </Link>
         </div>
 
-        {/* 最新生成的练习题 */}
-        {currentPaper && currentPaper.questionList && currentPaper.questionList.length > 0 ? (
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              最新练习题（{new Date(currentPaper.generate_time).toLocaleString('zh-CN')}）
-            </h2>
-            {renderQuestionList(currentPaper.questionList)}
-          </div>
-        ) : currentPaper ? (
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">每日一练</h2>
-            <p className="text-gray-500">本套练习题暂无题目</p>
-          </div>
-        ) : null}
-
-        {/* 历史记录详情 */}
-        {selectedHistoryPaper && (
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-8 relative z-10">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-800">
-                历史练习题详情（{new Date(selectedHistoryPaper.generate_time).toLocaleString('zh-CN')}）
+        {/* 练习区域 */}
+        {isPracticing && practiceQuestions.length > 0 ? (
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-8 border-l-4 border-green-500">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                第 {currentQuestionIndex + 1}/{practiceQuestions.length} 题
               </h2>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-lg">{practiceQuestions[currentQuestionIndex].question_content}</p>
+              <div className="mt-2 text-sm text-gray-500">
+                标签：{(practiceQuestions[currentQuestionIndex].tag_names || []).join('、') || '无标签'}
+              </div>
+            </div>
+            
+            <div className="flex gap-4">
               <button
-                onClick={closeHistoryPaper}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded-lg transition-all"
+                onClick={() => recordPracticeResult(true)}
+                className="flex-1 px-4 py-3 text-lg font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
               >
-                关闭
+                回答正确
+              </button>
+              <button
+                onClick={() => recordPracticeResult(false)}
+                className="flex-1 px-4 py-3 text-lg font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+              >
+                回答错误
               </button>
             </div>
-            {isLoadingHistory ? (
-              <p className="text-gray-500 text-center py-4">加载中...</p>
-            ) : (
-              renderQuestionList(selectedHistoryPaper.questionList)
-            )}
+          </div>
+        ) : (
+          !isLoading && (
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">练习历史记录</h2>
+              
+              {practiceLogs.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  暂无练习记录，点击上方按钮开始练习！
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">序号</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">题目</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">练习时间</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">结果</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {practiceLogs.map((log, index) => {
+                        const question = allQuestions.find(q => q.id === log.question_id);
+                        return (
+                          <tr key={log.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 text-sm text-gray-900">{index + 1}</td>
+                            <td className="px-6 py-4 text-sm text-gray-900">
+                              {question ? truncate(question.question_content) : '题目已删除'}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500">
+                              {new Date(log.practice_time).toLocaleString('zh-CN')}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              <span className={`px-2 py-1 rounded-full text-xs ${
+                                log.is_correct 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                {log.is_correct ? '正确' : '错误'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )
+        )}
+        
+        {/* 加载状态 */}
+        {isLoading && (
+          <div className="bg-white rounded-lg shadow-sm p-8 text-center text-gray-500">
+            加载中...
           </div>
         )}
-
-        {/* 历史练习记录 - 表格形式 */}
-        <div className="bg-white rounded-xl shadow-lg mb-8 overflow-hidden">
-          <div className="p-6 border-b">
-            <h2 className="text-xl font-semibold text-gray-800">历史练习记录</h2>
-          </div>
-
-          {dailyPractices && dailyPractices.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">序号</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">生成时间</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">题目数量</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {dailyPractices.map((paper, index) => (
-                    <tr 
-                      key={paper.id || `paper-${Date.now()}`} 
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => viewHistoryPaper(paper)}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{index + 1}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(paper.generate_time).toLocaleString('zh-CN')}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {(paper.included_question_ids || []).length} 道
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button 
-                          className="text-blue-600 hover:text-blue-800 mr-3 font-medium"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            viewHistoryPaper(paper);
-                          }}
-                        >
-                          详情
-                        </button>
-                        <button 
-                          className="text-red-600 hover:text-red-800 font-medium"
-                          onClick={(e) => deleteHistoryPaper(paper.id, e)}
-                          disabled={isDeleting === paper.id}
-                        >
-                          {isDeleting === paper.id ? '删除中...' : '删除'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-8 text-center text-gray-500">
-              暂无历史练习记录
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
